@@ -1,0 +1,14 @@
+{
+    "name": "kesiswaan/kesiswaanv2",
+    "description": "Kesiswaan v2 Dapodik import",
+    "type": "project",
+    "authors": [
+        {
+            "name": "ethnic-aaw",
+            "email": "smkn1leuwimunding@gmail.com"
+        }
+    ],
+    "require": {
+        "phpoffice/phpspreadsheet": "^5.10"
+    }
+}

@@ -1,0 +1,185 @@
+<div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card p-5">
+  <h3 class="font-semibold">Master Siswa — Kelola Data</h3>
+  <p class="text-xs text-[#475569] dark:text-[#94A3B8] mt-1">Hapus seluruh master siswa (soft-delete <code>siswa</code> + kosongkan <code>peserta_didik</code>). Tidak menghapus kelas/user/pelanggaran. Ketik <code>HAPUS</code> untuk konfirmasi.</p>
+  <div class="flex flex-wrap gap-2 mt-3">
+    <input id="clearConfirm" placeholder="Ketik HAPUS" class="h-9 px-3 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#0F172A] text-sm w-32">
+    <button id="btnClear" onclick="doClear()" class="h-9 px-4 rounded-input bg-[#EF4444] hover:bg-[#DC2626] text-white text-sm font-semibold inline-flex items-center gap-2"><i data-lucide="trash-2" class="w-4 h-4"></i> Clear / Hapus Master Siswa</button>
+    <span id="clearInfo" class="text-xs text-[#94A3B8] self-center"></span>
+  </div>
+  <div id="clearErr" class="hidden mt-2 rounded-lg border-l-4 border-red-500 bg-[#FFF1F2] px-3 py-2 text-xs"></div>
+</div>
+
+<div id="import" class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card p-5">
+  <h3 class="font-semibold">Import dari Excel Dapodik — Master 60 Kolom</h3>
+  <p class="text-xs text-[#475569] dark:text-[#94A3B8] mt-1">Upload tarikan Dapodik <code class="px-1 py-0.5 rounded bg-[#F1F5F9] dark:bg-white/10">.xls BIFF</code> / <code class="px-1 py-0.5 rounded bg-[#F1F5F9] dark:bg-white/10">.xlsx</code> / <code class="px-1 py-0.5 rounded bg-[#F1F5F9] dark:bg-white/10">.csv</code> — baca langsung via PhpSpreadsheet. Header 2 baris + merged cell didukung. Data → <code>peserta_didik</code> (60 kolom) + sinkron <code>siswa</code> &amp; auto-buat <code>kelas</code> dari Rombel.</p>
+  <div class="flex flex-wrap gap-2 mt-2 text-xs text-[#475569] dark:text-[#94A3B8]">
+    <span>Max 10MB</span><span>·</span><span>Header terdeteksi otomatis</span><span>·</span><span>60 kolom Dapodik → peserta_didik</span>
+    <span id="apiBadge" class="ml-auto px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">API: mengecek…</span>
+  </div>
+  <form id="fImport" class="mt-4 space-y-3" onsubmit="return doPreview(event)">
+    <?=csrf_field()?>
+    <label class="flex flex-col items-center justify-center gap-2 h-28 rounded-input border-2 border-dashed border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] cursor-pointer hover:bg-[#F1F5F9] dark:hover:bg-white/5">
+      <i data-lucide="file-up" class="w-7 h-7 text-[#94A3B8]"></i>
+      <span class="text-sm font-medium">Pilih file Excel / CSV (tarikan Dapodik)</span>
+      <span id="fileName" class="text-xs text-[#475569] dark:text-[#94A3B8]">Belum ada file · .xls .xlsx .csv — BIFF didukung</span>
+      <input id="fileInput" type="file" accept=".csv,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="hidden">
+    </label>
+    <div class="flex flex-wrap gap-4 text-sm">
+      <label class="flex items-center gap-2"><input id="autoKelas" type="checkbox" class="rounded" checked> Auto-buat kelas dari Rombel</label>
+      <label class="flex items-center gap-2"><input id="upsert" type="checkbox" class="rounded"> UPSERT (update bila NISN/NIPD sudah ada)</label>
+    </div>
+    <button id="btnPreview" class="h-10 px-5 rounded-input bg-[#2563EB] text-white text-sm font-semibold">Preview & Validasi (60 kolom)</button>
+  </form>
+  <div id="progressWrap" class="hidden mt-4">
+    <div class="flex justify-between text-xs mb-1"><span id="progressLabel" class="text-[#475569]">Mengupload…</span><span id="progressPct" class="font-semibold">0%</span></div>
+    <div class="h-2 rounded-full bg-[#E2E8F0] dark:bg-white/10 overflow-hidden"><div id="progressBar" class="h-full bg-[#2563EB] transition-all duration-200" style="width:0%"></div></div>
+  </div>
+
+  <div id="errBox" class="hidden rounded-lg border-l-4 border-red-500 bg-[#FFF1F2] dark:bg-red-500/10 px-4 py-3 text-sm whitespace-pre-wrap mt-4"></div>
+  <div id="preview" class="hidden bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card overflow-hidden mt-4">
+    <div class="px-4 py-3 border-b border-[#E2E8F0] dark:border-[#334155] flex items-center justify-between">
+      <h3 class="font-semibold text-sm">Preview — periksa sebelum simpan</h3>
+      <span id="badge" class="text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700">—</span>
+    </div>
+    <div class="overflow-x-auto max-h-[420px]">
+      <table class="w-full text-sm">
+        <thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase text-[#475569] sticky top-0"><tr><th class="px-3 py-2 text-left">#</th><th class="px-3 py-2 text-left">NIPD</th><th class="px-3 py-2 text-left">Nama</th><th class="px-3 py-2 text-left">Rombel</th><th class="px-3 py-2 text-left">JK</th><th class="px-3 py-2 text-left">Status</th></tr></thead>
+        <tbody id="tbody" class="divide-y divide-[#E2E8F0]"></tbody>
+      </table>
+    </div>
+    <div class="px-4 py-3 flex flex-wrap gap-2 items-center justify-between border-t">
+      <span id="summary" class="text-xs text-[#475569]"></span>
+      <div class="flex gap-2">
+        <button id="btnSave" onclick="doSave()" class="h-8 px-4 rounded-input bg-[#2563EB] text-white text-xs font-semibold">Simpan ke peserta_didik + siswa</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="/kesiswaanv2/assets/js/api.js"></script>
+<script>
+const fileInput=document.getElementById('fileInput'), fileName=document.getElementById('fileName'), apiBadge=document.getElementById('apiBadge');
+fileInput?.addEventListener('change',e=>{
+  const f=e.target.files[0]; fileName.textContent=f?f.name+' · '+Math.round(f.size/1024)+'KB':'Belum ada file · .xls .xlsx .csv';
+});
+fetch((localStorage.getItem('kesiswaan_api_base')||'http://localhost:8080')+'/health').then(r=>r.json()).then(j=>{
+  if(!apiBadge) return;
+  apiBadge.textContent = j.success ? 'API Go: OK' : 'API Go: down → pakai PHP';
+  apiBadge.className = j.success ? 'ml-auto px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs' : 'ml-auto px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs';
+}).catch(()=>{
+  if(!apiBadge) return;
+  apiBadge.textContent = 'API Go: down → pakai PHP fallback';
+  apiBadge.className = 'ml-auto px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-xs';
+});
+const CSRF_TOKEN = <?=json_encode($_SESSION['csrf_token']??'')?>;
+function setProgress(p, label){
+  const w=document.getElementById('progressWrap'), bar=document.getElementById('progressBar'), pct=document.getElementById('progressPct'), lab=document.getElementById('progressLabel');
+  if(!w) return;
+  w.classList.remove('hidden'); bar.style.width=p+'%'; pct.textContent=p+'%'; if(label) lab.textContent=label;
+  if(p>=100) setTimeout(()=>w.classList.add('hidden'), 800);
+}
+function xhrPost(url, fd, onProgress){
+  return new Promise((resolve, reject)=>{
+    const x=new XMLHttpRequest();
+    x.open('POST', url, true);
+    x.upload.onprogress = e=>{ if(e.lengthComputable && onProgress) onProgress(Math.round(e.loaded/e.total*100)); };
+    x.onload = ()=>{ try{ const j=JSON.parse(x.responseText); if(x.status>=200&&x.status<300 && j.success) resolve(j.data||j); else reject(new Error(j.error||j.message||x.statusText)); }catch(e){ reject(new Error(x.responseText||x.statusText)); } };
+    x.onerror = ()=>reject(new Error('Network error'));
+    x.send(fd);
+  });
+}
+async function postImport(fd, auto, upsert, dry, onProgress){
+  fd.set('csrf_token', CSRF_TOKEN);
+  const qs = '?dry_run='+(dry?'1':'0')+'&auto_kelas='+auto+'&upsert='+upsert;
+  try{
+    const res = await apiFetch('/api/siswa/import-excel'+qs, {method:'POST', body:fd});
+    if(onProgress) onProgress(100);
+    return res.data||res;
+  }catch(e){
+    const url='/kesiswaanv2/siswa/do_import_excel.php'+qs;
+    const data = await xhrPost(url, fd, onProgress);
+    return data;
+  }
+}
+async function doClear(){
+  const inp=document.getElementById('clearConfirm'), btn=document.getElementById('btnClear'), info=document.getElementById('clearInfo'), err=document.getElementById('clearErr');
+  if(!inp || inp.value.trim()!=='HAPUS'){ if(err){ err.textContent='Ketik HAPUS untuk konfirmasi'; err.classList.remove('hidden'); } return; }
+  if(!confirm('Yakin hapus SELURUH master siswa? (siswa soft-delete + peserta_didik dikosongkan)')) return;
+  btn.disabled=true; btn.textContent='Menghapus…'; err.classList.add('hidden');
+  try{
+    const fd=new FormData(); fd.append('csrf_token', CSRF_TOKEN); fd.append('confirm','HAPUS');
+    const r=await fetch('/kesiswaanv2/pengaturan/clear_siswa.php',{method:'POST', body:fd, credentials:'same-origin'});
+    const j=await r.json();
+    if(!r.ok||!j.success) throw new Error(j.error||r.statusText);
+    info.textContent='Terhapus: '+j.data.siswa_cleared+' siswa, '+j.data.pd_cleared+' peserta_didik';
+    toast('Master siswa di-clear',''); setTimeout(()=>location.href='/kesiswaanv2/siswa/index.php', 900);
+  }catch(e){ err.textContent=e.message; err.classList.remove('hidden'); toast(e.message,'error'); }
+  btn.disabled=false; btn.innerHTML='<i data-lucide="trash-2" class="w-4 h-4"></i> Clear / Hapus Master Siswa'; lucide.createIcons();
+}
+let lastFile=null;
+async function doPreview(e){
+  e.preventDefault();
+  const f=fileInput.files[0];
+  if(!f) return toast('Pilih file dulu','error');
+  if(f.size>10*1024*1024) return toast('Max 10MB','error');
+  lastFile=f;
+  const pv=document.getElementById('preview'), err=document.getElementById('errBox');
+  pv.classList.add('hidden'); err.classList.add('hidden');
+  setProgress(0,'Mengupload… 0%');
+  let parsingDone=false;
+  const parsingPromise = (async()=>{ await new Promise(r=>setTimeout(r,150)); if(!parsingDone) await animateParsing(70, 92, 'Mem-parsing 60 kolom…', 1200); })();
+  try{
+    const fd=new FormData(); fd.append('file', f);
+    const auto=document.getElementById('autoKelas').checked ? '1':'0';
+    const up=document.getElementById('upsert').checked ? '1':'0';
+    const d = await postImport(fd, auto, up, true, p=>{ const v=Math.round(p*0.7); setProgress(v,'Mengupload… '+v+'%'); if(p>=100) parsingDone=true; });
+    parsingDone=true;
+    setProgress(96,'Mem-parsing 60 kolom… 96%');
+    await new Promise(r=>setTimeout(r,120));
+    setProgress(100,'Preview siap 100%');
+    renderPreview(d);
+  }catch(ex){
+    parsingDone=true;
+    setProgress(0,'Gagal 0%');
+    const msg = ex.message||String(ex);
+    err.textContent = msg; err.classList.remove('hidden'); toast(msg,'error');
+  }
+  return false;
+}
+function renderPreview(d){
+  const tb=document.getElementById('tbody'), badge=document.getElementById('badge'), sum=document.getElementById('summary');
+  const gagal=d.gagal||0, ok=d.berhasil||0, upd=d.diperbarui||0;
+  badge.textContent = ok+' baru'+(upd? ' · '+upd+' update':'')+' · '+gagal+' bermasalah';
+  badge.className = gagal>0 ? 'text-xs px-2 py-1 rounded-full bg-amber-50 text-amber-700' : 'text-xs px-2 py-1 rounded-full bg-emerald-50 text-emerald-700';
+  sum.textContent = ok+' akan disimpan ke peserta_didik'+(upd?' ('+upd+' update)':'')+', '+gagal+' ditolak.' + (d.dry_run?' (preview)':'');
+  document.getElementById('btnSave').style.display = ok>0 ? '' : 'none';
+  tb.innerHTML='';
+  (d.rincian||[]).forEach(r=>{
+    const isOk=r.status==='ok'||r.status==='updated'||r.status==='update';
+    const tr=document.createElement('tr');
+    tr.className=isOk?'hover:bg-[#F8FAFC]':'bg-red-50/60';
+    const label=isOk?(r.status==='updated'?'Updated':(r.status==='update'?'Akan update':'Valid')):esc(r.error||'Gagal');
+    const cls=isOk?'bg-emerald-50 text-emerald-700':(r.status==='updated'?'bg-sky-50 text-sky-700':'bg-[#FEE2E2] text-[#DC2626]');
+    tr.innerHTML='<td class="px-3 py-2">'+r.line+'</td><td class="px-3 py-2 '+(isOk?'':'text-red-600')+'">'+esc(r.nipd)+'</td><td class="px-3 py-2">'+esc(r.nama)+'</td><td class="px-3 py-2 '+(r.error&&r.error.includes('kelas')?'text-red-600':'')+'">'+esc(r.kelas)+'</td><td class="px-3 py-2">'+esc(r.jk)+'</td><td class="px-3 py-2"><span class="px-2 py-1 rounded-badge text-xs font-semibold '+cls+'">'+label+'</span></td>';
+    tb.appendChild(tr);
+  });
+  document.getElementById('preview').classList.remove('hidden'); lucide.createIcons();
+}
+async function doSave(){
+  if(!lastFile) return;
+  const btn=document.getElementById('btnSave'); btn.disabled=true; btn.textContent='Menyimpan…';
+  setProgress(0,'Menyimpan… 0%');
+  try{
+    const fd=new FormData(); fd.append('file', lastFile);
+    const auto=document.getElementById('autoKelas').checked ? '1':'0';
+    const up=document.getElementById('upsert').checked ? '1':'0';
+    const d = await postImport(fd, auto, up, false, p=>{ const v=Math.round(p*0.7); setProgress(v,'Menyimpan… '+v+'%'); });
+    setProgress(92,'Menyimpan ke DB… 92%');
+    await new Promise(r=>setTimeout(r,200));
+    setProgress(100,'Selesai 100%');
+    toast((d.berhasil||0)+' disimpan ke peserta_didik'+((d.diperbarui||0)?' ('+d.diperbarui+' update)':'')+' — '+(d.gagal||0)+' gagal');
+    if((d.berhasil||0)>0) setTimeout(()=>location.href='/kesiswaanv2/siswa/index.php',900);
+  }catch(ex){ setProgress(0,'Gagal 0%'); toast(ex.message,'error'); const eb=document.getElementById('errBox'); eb.textContent=ex.message; eb.classList.remove('hidden'); }
+  btn.disabled=false; btn.textContent='Simpan ke peserta_didik + siswa';
+}
+function esc(s){ return String(s||'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+</script>

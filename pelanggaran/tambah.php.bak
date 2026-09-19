@@ -1,0 +1,116 @@
+<?php $active='tambah-pelanggaran'; $title='Catat Pelanggaran';
+require __DIR__.'/../config/db.php';
+require __DIR__.'/../includes/csrf.php';
+if(session_status()===PHP_SESSION_NONE) session_start();
+require __DIR__.'/../includes/auth.php';
+if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+$err=''; $msg='';
+$preselectedId=$_GET['siswa']??''; $preselectedLabel='';
+if($preselectedId!==''){ try{ $st=$pdo->prepare("SELECT nama,nipd FROM siswa WHERE id=? LIMIT 1"); $st->execute([(int)$preselectedId]); $r=$st->fetch(); if($r) $preselectedLabel=$r['nama'].' — '.$r['nipd']; }catch(Throwable $e){} }
+$jenis=[]; try{ $jenis=$pdo->query("SELECT id,nama,bobot_poin FROM jenis_pelanggaran WHERE deleted_at IS NULL ORDER BY nama")->fetchAll(); }catch(Throwable $e){}
+if(!$jenis) $jenis=[['id'=>1,'nama'=>'Terlambat masuk','bobot_poin'=>10],['id'=>2,'nama'=>'Seragam tidak lengkap','bobot_poin'=>5],['id'=>3,'nama'=>'Membolos','bobot_poin'=>25]];
+$siswaOpts=[]; try{ $siswaOpts=$pdo->query("SELECT id,nama,nipd FROM siswa WHERE deleted_at IS NULL ORDER BY nama LIMIT 200")->fetchAll(); }catch(Throwable $e){}
+$siswaTotal=0; try{ $siswaTotal=(int)$pdo->query("SELECT COUNT(*) FROM siswa WHERE deleted_at IS NULL")->fetchColumn(); }catch(Throwable $e){}
+if($_SERVER['REQUEST_METHOD']==='POST'){
+  if(!csrf_verify($_POST['csrf_token']??'')){ $err='CSRF tidak valid'; }
+  else{
+    $siswaInput=trim($_POST['siswa']??''); $jenisId=(int)($_POST['jenis_id']??0); $poin=(int)($_POST['poin']??0); $tgl=$_POST['tanggal']??date('Y-m-d'); $lokasi=trim($_POST['lokasi']??''); $ket=trim($_POST['keterangan']??''); $tindakan=trim($_POST['tindakan']??'');
+    $siswaId=0; if(preg_match('/(\d+)\s*$/',$siswaInput,$m)) $siswaId=(int)$m[1]; if(!$siswaId && ctype_digit($siswaInput)) $siswaId=(int)$siswaInput;
+    // also try nipd lookup
+    if(!$siswaId && $siswaInput!==''){ try{ $st=$pdo->prepare("SELECT id FROM siswa WHERE nipd=? LIMIT 1"); $st->execute([trim(explode('—',$siswaInput)[1]??$siswaInput)]); $siswaId=(int)$st->fetchColumn(); }catch(Throwable $e){} }
+    if(!$siswaId) $err='Siswa wajib dipilih';
+    elseif(!$jenisId) $err='Jenis pelanggaran wajib';
+    elseif($poin<1||$poin>100) $err='Poin 1–100';
+    else{
+      try{
+        $st=$pdo->prepare("SELECT bobot_poin FROM jenis_pelanggaran WHERE id=? AND deleted_at IS NULL LIMIT 1"); $st->execute([$jenisId]); $bobot=(int)$st->fetchColumn();
+        if(!$bobot) $err='Jenis tidak ditemukan';
+        elseif($poin!==$bobot && $ket==='') $err='Override poin wajib isi alasan di keterangan';
+        else{
+          $ta='2024/2025'; try{ $st2=$pdo->prepare("SELECT COALESCE(k.tahun_ajaran,'2024/2025') FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id WHERE s.id=? AND s.deleted_at IS NULL LIMIT 1"); $st2->execute([$siswaId]); $ta=$st2->fetchColumn()?:$ta; }catch(Throwable $e){}
+          $chk=$pdo->prepare("SELECT id FROM siswa WHERE id=? AND deleted_at IS NULL LIMIT 1"); $chk->execute([$siswaId]); if(!$chk->fetchColumn()) $err='Siswa tidak ditemukan / sudah dihapus'; else {
+          $pelapor=(int)($_SESSION['user']['id']??0);
+          $pdo->prepare("INSERT INTO pelanggaran_siswa(siswa_id,jenis_pelanggaran_id,poin_final,tahun_ajaran,tanggal,lokasi,keterangan,tindakan,pelapor_id) VALUES(?,?,?,?,?,?,?,?,?)")->execute([$siswaId,$jenisId,$poin,$ta,$tgl,$lokasi?:null,$ket?:null,$tindakan?:null,$pelapor]);
+          $nid=$pdo->lastInsertId();
+          if($poin!==$bobot) $pdo->prepare("INSERT INTO audit_poin(pelanggaran_siswa_id,poin_default,poin_final,alasan,changed_by) VALUES(?,?,?,?,?)")->execute([$nid,$bobot,$poin,$ket,$pelapor]);
+          header('Location: /kesiswaanv2/siswa/detail.php?id='.$siswaId); exit;
+          }
+        }
+      }catch(Throwable $e){ $err=$e->getMessage(); }
+    }
+  }
+}
+?>
+<?php require __DIR__.'/../includes/header.php'; ?>
+<?php if($err): ?><div class="mb-4 rounded-lg border-l-4 border-red-500 bg-[#FFF1F2] px-4 py-2.5 text-sm"><?=htmlspecialchars($err)?></div><?php endif; ?>
+<form method="POST" class="max-w-2xl bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card p-5 sm:p-6 space-y-4">
+<?=csrf_field()?>
+  <div class="rounded-lg bg-[#EFF6FF] dark:bg-white/5 border border-[#BFDBFE] dark:border-white/10 px-3 py-2.5 text-xs flex gap-2">
+    <i data-lucide="info" class="w-4 h-4 text-[#2563EB] shrink-0"></i>
+    <span>Pelapor otomatis dari sesi login. Poin default dari master — override wajib isi alasan & tercatat di <code>audit_poin</code>.</span>
+  </div>
+  <label class="block">
+    <span class="text-[13px] font-medium">Siswa <span class="text-red-500">*</span></span>
+    <div class="relative mt-1">
+      <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8]"></i>
+      <input name="siswa" id="siswaSearch" list="siswaList" value="<?=htmlspecialchars($preselectedLabel ?: ($_POST['siswa']??''))?>" placeholder="Cari nama / NIPD… (<?=$siswaTotal?> siswa, <?=count($siswaOpts)?> dimuat — ketik lebih spesifik)" required class="w-full h-10 pl-9 pr-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm" autocomplete="off">
+      <datalist id="siswaList"><?php foreach($siswaOpts as $s): ?><option value="<?=htmlspecialchars($s['nama'].' — '.$s['nipd'].' — '.$s['id'])?>"><?php endforeach; ?></datalist>
+      <div id="siswaAjax" class="hidden absolute z-20 mt-1 w-full bg-white dark:bg-[#1E293B] border border-[#CBD5E1] dark:border-[#334155] rounded-input shadow-lg max-h-56 overflow-auto"></div>
+      <?php if($siswaTotal>200): ?><p class="text-[11px] text-amber-600 mt-1">Daftar autocomplete dibatasi 200 — ketik nama/NIPD untuk cari lengkap (live search).</p><?php endif; ?>
+    </div>
+  </label>
+  <label class="block">
+    <span class="text-[13px] font-medium">Jenis Pelanggaran <span class="text-red-500">*</span></span>
+    <select name="jenis_id" id="jenis" required class="mt-1 w-full h-10 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm">
+      <option value="">— Pilih —</option>
+      <?php foreach($jenis as $j): ?><option value="<?=$j['id']?>" data-poin="<?=$j['bobot_poin']?>" <?= (string)($_POST['jenis_id']??'')===(string)$j['id']?'selected':'' ?>><?=htmlspecialchars($j['nama'])?> — <?=$j['bobot_poin']?> poin</option><?php endforeach; ?>
+    </select>
+  </label>
+  <div class="grid sm:grid-cols-2 gap-4">
+    <label class="block"><span class="text-[13px] font-medium">Poin (auto-fill, dapat override)</span>
+      <input name="poin" id="poin" type="number" min="1" max="100" required value="<?=htmlspecialchars($_POST['poin']??'')?>" placeholder="—" class="mt-1 w-full h-10 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm">
+      <span id="poinHint" class="text-[11px] text-[#475569] dark:text-[#94A3B8]">Pilih jenis dahulu</span>
+    </label>
+    <label class="block"><span class="text-[13px] font-medium">Tanggal Kejadian</span><input name="tanggal" type="date" value="<?=htmlspecialchars($_POST['tanggal']??date('Y-m-d'))?>" class="mt-1 w-full h-10 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm"></label>
+  </div>
+  <label class="block"><span class="text-[13px] font-medium">Lokasi Kejadian</span><input name="lokasi" value="<?=htmlspecialchars($_POST['lokasi']??'')?>" placeholder="Ruang kelas / lapangan…" class="mt-1 w-full h-10 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm"></label>
+  <label class="block"><span class="text-[13px] font-medium">Keterangan / Detail kejadian</span><textarea name="keterangan" id="ket" rows="2" placeholder="Kronologi singkat…" class="mt-1 w-full px-3 py-2 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm"><?=htmlspecialchars($_POST['keterangan']??'')?></textarea>
+    <span id="ketHint" class="hidden text-[11px] text-amber-600">Override poin — wajib isi alasan di keterangan.</span>
+  </label>
+  <label class="block"><span class="text-[13px] font-medium">Tindakan Diambil</span><textarea name="tindakan" rows="2" placeholder="Teguran / panggilan ortu / skors…" class="mt-1 w-full px-3 py-2 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm"><?=htmlspecialchars($_POST['tindakan']??'')?></textarea></label>
+  <label class="block"><span class="text-[13px] font-medium">Pelapor (auto)</span><input value="<?=htmlspecialchars(($_SESSION['user']['nama']??'Admin').' — '.($_SESSION['user']['username']??'admin').' (dari sesi)')?>" disabled class="mt-1 w-full h-10 px-3 rounded-input border border-[#E2E8F0] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] text-sm text-[#475569] dark:text-[#94A3B8]"></label>
+  <div class="flex gap-2 pt-2"><button class="h-10 px-5 rounded-input bg-[#2563EB] text-white text-sm font-semibold">Simpan Pelanggaran</button><a href="/kesiswaanv2/dashboard.php" class="h-10 px-5 rounded-input border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm inline-flex items-center">Batal</a></div>
+</form>
+<script>
+const siswaInput=document.getElementById('siswaSearch'), siswaAjax=document.getElementById('siswaAjax');
+let siswaTimer=null;
+siswaInput?.addEventListener('input',()=>{
+  const q=siswaInput.value.trim();
+  if(q.length<2){ siswaAjax?.classList.add('hidden'); return; }
+  clearTimeout(siswaTimer);
+  siswaTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch('/kesiswaanv2/api-go-proxy.php?path='+encodeURIComponent('/api/siswa?q='+encodeURIComponent(q)+'&size=20'),{headers:{'Authorization':'Bearer '+(localStorage.getItem('kesiswaan_token')||'')}});
+      let j; try{ j=await r.json(); }catch{ j={}; }
+      let rows=j.data?.rows||j.rows||[];
+      if(!rows.length){
+        const rr=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q));
+        if(rr.ok){ const jj=await rr.json(); rows=jj.rows||[]; }
+      }
+      if(!rows.length){ siswaAjax.classList.add('hidden'); return; }
+      siswaAjax.innerHTML=rows.slice(0,20).map(x=>'<button type="button" data-v="'+(x.nama+' — '+x.nipd+' — '+x.id)+'" class="w-full text-left px-3 py-2 hover:bg-[#F1F5F9] dark:hover:bg-white/5 text-sm">'+x.nama+' — '+x.nipd+'</button>').join('');
+      siswaAjax.classList.remove('hidden');
+      siswaAjax.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{ siswaInput.value=b.dataset.v; siswaAjax.classList.add('hidden'); }));
+    }catch(e){}
+  },300);
+});
+document.addEventListener('click',e=>{ if(!e.target.closest('#siswaSearch') && !e.target.closest('#siswaAjax')) siswaAjax?.classList.add('hidden'); });
+const jenisEl=document.getElementById('jenis'), poinEl=document.getElementById('poin'), hint=document.getElementById('poinHint'), ket=document.getElementById('ket'), ketHint=document.getElementById('ketHint');
+let defaultPoin=null;
+function syncPoin(){ const o=jenisEl.selectedOptions[0]; defaultPoin=o&&o.dataset.poin?parseInt(o.dataset.poin):null; if(defaultPoin && !poinEl.value) poinEl.value=defaultPoin; if(defaultPoin) hint.textContent='Default '+defaultPoin+' dari master'; else hint.textContent='Pilih jenis dahulu'; checkOverride(); }
+jenisEl.addEventListener('change',syncPoin);
+poinEl.addEventListener('input',checkOverride);
+function checkOverride(){ const cur=parseInt(poinEl.value); const over=defaultPoin!==null && cur!==defaultPoin; ketHint.classList.toggle('hidden', !over); poinEl.classList.toggle('border-amber-400', over); }
+syncPoin();
+</script>
+<?php require __DIR__.'/../includes/footer.php'; ?>
