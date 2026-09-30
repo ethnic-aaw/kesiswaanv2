@@ -4,11 +4,13 @@ require __DIR__.'/includes/csrf.php';
 if(session_status()===PHP_SESSION_NONE) session_start();
 require __DIR__.'/includes/auth.php';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_pengaturan');
 $threshold=76; $msg=''; $err='';
 if(isset($pdo) && $pdo){
   try{ $v=$pdo->query("SELECT value FROM settings WHERE key_name='threshold_poin_kritis' LIMIT 1")->fetchColumn(); if($v!==false && $v!=='') $threshold=(int)$v; }catch(Throwable $e){}
 }
 if($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['threshold'])){
+  require_can('mutate_pengaturan');
   if(!csrf_verify($_POST['csrf_token']??'')){ $err='CSRF token tidak valid'; }
   else{
     $val=(int)($_POST['threshold']??0);

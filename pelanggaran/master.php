@@ -5,8 +5,10 @@ require __DIR__.'/../includes/csrf.php';
 require __DIR__.'/../includes/auth.php';
 $active='pelanggaran'; $title='Jenis Pelanggaran';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_pelanggaran_master');
 function _verify_csrf_or_die(){ $tok=$_POST['csrf_token']??$_SERVER['HTTP_X_CSRF_TOKEN']??''; if(!csrf_verify($tok)){ http_response_code(403); exit('CSRF token tidak valid'); } }
 if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['aksi'])) {
+  require_can('mutate_pelanggaran_master');
   _verify_csrf_or_die();
   $aksi=$_POST['aksi'];
   try{
@@ -40,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD']==='POST' && isset($_POST['aksi'])) {
       if($errs) $msg.=" · ".implode(' | ', array_slice(array_unique($errs),0,2));
       header("Location: master.php?msg=".urlencode($msg).($fail?"&err=".urlencode(implode(' | ',$errs)):"")); exit;
     }
-  }catch(Throwable $e){ header("Location: master.php?err=".urlencode($e->getMessage())); exit; }
+  }catch(Throwable $e){ error_log('master pelanggaran: '.$e->getMessage()); header("Location: master.php?err=".urlencode('Gagal proses')); exit; }
 }
 
 $kat = $_GET['kategori'] ?? '';

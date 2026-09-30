@@ -5,8 +5,10 @@
     <span>Max 10MB</span><span>·</span><span>Header terdeteksi otomatis</span><span>·</span><span>60 kolom Dapodik → peserta_didik</span>
     <span id="apiBadge" class="ml-auto px-2 py-0.5 rounded-full bg-slate-100 dark:bg-white/10">API: mengecek…</span>
   </div>
+  <?php $taDefault=''; try{ $taDefault=$pdo->query("SELECT value FROM settings WHERE key_name='tahun_ajaran_aktif' LIMIT 1")->fetchColumn()?:''; }catch(Throwable $e){} if(!$taDefault) $taDefault=date('Y').'/'.(date('Y')+1); $taDefault=preg_replace('/\s+Semester.*$/i','',$taDefault); ?>
   <form id="fImport" class="mt-4 space-y-3" onsubmit="return doPreview(event)">
     <?=csrf_field()?>
+    <label class="block text-xs font-medium">Tahun Ajaran Import <span class="text-red-500">*</span> <span class="font-normal text-[#94A3B8]">auto dari file Dapodik, bisa override</span><input id="tahunAjaran" name="tahun_ajaran" value="<?=htmlspecialchars($taDefault)?>" placeholder="2025/2026" class="mt-1 w-full h-9 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm"></label>
     <label class="flex flex-col items-center justify-center gap-2 h-28 rounded-input border-2 border-dashed border-[#CBD5E1] dark:border-[#334155] bg-[#F8FAFC] dark:bg-[#0F172A] cursor-pointer hover:bg-[#F1F5F9] dark:hover:bg-white/5">
       <i data-lucide="file-up" class="w-7 h-7 text-[#94A3B8]"></i>
       <span class="text-sm font-medium">Pilih file Excel / CSV (tarikan Dapodik)</span>
@@ -78,7 +80,9 @@ function xhrPost(url, fd, onProgress){
 }
 async function postImport(fd, auto, upsert, dry, onProgress){
   fd.set('csrf_token', CSRF_TOKEN);
-  const qs = '?dry_run='+(dry?'1':'0')+'&auto_kelas='+auto+'&upsert='+upsert;
+  const taVal=document.getElementById('tahunAjaran')?.value?.trim()||'';
+  fd.set('tahun_ajaran', taVal);
+  const qs = '?dry_run='+(dry?'1':'0')+'&auto_kelas='+auto+'&upsert='+upsert+'&tahun_ajaran='+encodeURIComponent(taVal);
   try{
     const res = await apiFetch('/api/siswa/import-excel'+qs, {method:'POST', body:fd});
     if(onProgress) onProgress(100);

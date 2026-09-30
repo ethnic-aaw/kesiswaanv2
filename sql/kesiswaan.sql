@@ -139,6 +139,45 @@ CREATE TABLE IF NOT EXISTS peserta_didik (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_pd_nisn (nisn), INDEX idx_pd_nipd (nipd), INDEX idx_pd_rombel (rombel)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Kesehatan manual (ponytail: tambah kolom vaksin/alergi bila perlu)
+CREATE TABLE IF NOT EXISTS siswa_kesehatan (
+  siswa_id BIGINT NOT NULL PRIMARY KEY,
+  tinggi_badan VARCHAR(10) NULL,
+  berat_badan VARCHAR(10) NULL,
+  golongan_darah VARCHAR(5) NULL,
+  cacat_tubuh ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+  cacat_keterangan VARCHAR(255) NULL,
+  pakai_kacamata ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+  kacamata_minus VARCHAR(20) NULL,
+  kacamata_silinder VARCHAR(20) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS siswa_sakit (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  siswa_id BIGINT NOT NULL,
+  jenis_penyakit VARCHAR(150) NOT NULL,
+  usia_saat_sakit VARCHAR(20) NULL,
+  opname ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+  rumah_sakit VARCHAR(150) NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE,
+  INDEX idx_sakit_siswa (siswa_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS bimbingan_konseling (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  siswa_id BIGINT NOT NULL,
+  tanggal DATE NOT NULL,
+  permasalahan TEXT NOT NULL,
+  tindakan TEXT NULL,
+  konselor_id BIGINT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE,
+  FOREIGN KEY (konselor_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_bk_siswa (siswa_id), INDEX idx_bk_tanggal (tanggal)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 INSERT IGNORE INTO settings(key_name,value) VALUES('threshold_poin_kritis','76');
 INSERT IGNORE INTO kelas(id,nama_kelas,tingkat,tahun_ajaran) VALUES(1,'X IPA 2','X','2024/2025'),(2,'XI IPA 1','XI','2024/2025'),(3,'XII IPA 3','XII','2024/2025');
 INSERT IGNORE INTO jenis_pelanggaran(kode,nama,kategori,bobot_poin,konsekuensi) VALUES

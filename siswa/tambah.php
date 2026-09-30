@@ -4,6 +4,8 @@ require __DIR__.'/../includes/csrf.php';
 if(session_status()===PHP_SESSION_NONE) session_start();
 require __DIR__.'/../includes/auth.php';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+if($_SERVER['REQUEST_METHOD']==='GET') require_can('view_siswa');
+if($_SERVER['REQUEST_METHOD']==='POST') require_can('mutate_siswa');
 $err=''; $msg='';
 $kelasOpts=[]; try{ foreach($pdo->query("SELECT id,nama_kelas FROM kelas WHERE deleted_at IS NULL ORDER BY nama_kelas") as $r) $kelasOpts[]=$r; }catch(Throwable $e){}
 if($_SERVER['REQUEST_METHOD']==='POST'){

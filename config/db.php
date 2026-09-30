@@ -1,17 +1,32 @@
 <?php
-$host='127.0.0.1'; $db='kesiswaan'; $user='root'; $pass='';
+// ponytail: prod via .env — fallback ke 127.0.0.1 root kosong hanya untuk Laragon dev
+$isProd = (getenv('APP_ENV')==='production') || (($_SERVER['HTTPS']??'')==='on');
+if(session_status()===PHP_SESSION_NONE && !headers_sent()){
+  ini_set('session.cookie_httponly','1');
+  ini_set('session.cookie_samesite','Strict');
+  if($isProd) ini_set('session.cookie_secure','1');
+  ini_set('session.gc_maxlifetime','1800');
+  ini_set('session.cookie_lifetime','0');
+}
+if(!headers_sent()){
+  header('X-Frame-Options: SAMEORIGIN');
+  header('X-Content-Type-Options: nosniff');
+  header('Referrer-Policy: strict-origin-when-cross-origin');
+  if($isProd) header('Strict-Transport-Security: max-age=31536000; includeSubDomains');
+}
+$host=getenv('DB_HOST')?:'127.0.0.1'; $db=getenv('DB_NAME')?:'kesiswaan'; $user=getenv('DB_USER')?:'root'; $pass=getenv('DB_PASS')?:'';
 $opts=[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES=>false];
 $pdo=null;
 try {
   $pdo=new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4",$user,$pass,$opts);
 } catch(PDOException $e){
-  if(str_contains($e->getMessage(),'Unknown database')){
+  if(!$isProd && str_contains($e->getMessage(),'Unknown database')){
     try{
       $tmp=new PDO("mysql:host=$host;charset=utf8mb4",$user,$pass,$opts);
       $tmp->exec("CREATE DATABASE IF NOT EXISTS `$db` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
       $pdo=new PDO("mysql:host=$host;dbname=$db;charset=utf8mb4",$user,$pass,$opts);
-    }catch(Throwable $e2){ $pdo=null; }
-  }
+    }catch(Throwable $e2){ error_log('db create: '.$e2->getMessage()); $pdo=null; }
+  } else { if($isProd) error_log('db connect: '.$e->getMessage()); $pdo=null; }
 }
 if($pdo){
   // patch: tambah kolom yang hilang di DB lama (sebelum ada deleted_at di schema)
@@ -50,6 +65,54 @@ if($pdo){
       INDEX idx_pd_nisn (nisn), INDEX idx_pd_nipd (nipd), INDEX idx_pd_rombel (rombel)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
   }catch(Throwable $ignored){}
+  // ponytail: tabel kesehatan manual — upgrade path: tambah kolom riwayat_vaksin / alergi bila perlu
+  try{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS siswa_kesehatan (
+      siswa_id BIGINT NOT NULL PRIMARY KEY,
+      tinggi_badan VARCHAR(10) NULL,
+      berat_badan VARCHAR(10) NULL,
+      golongan_darah VARCHAR(5) NULL,
+      cacat_tubuh ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+      cacat_keterangan VARCHAR(255) NULL,
+      pakai_kacamata ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+      kacamata_minus VARCHAR(20) NULL,
+      kacamata_silinder VARCHAR(20) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  }catch(Throwable $ignored){}
+  try{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS siswa_sakit (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      siswa_id BIGINT NOT NULL,
+      jenis_penyakit VARCHAR(150) NOT NULL,
+      usia_saat_sakit VARCHAR(20) NULL,
+      opname ENUM('Ya','Tidak') NOT NULL DEFAULT 'Tidak',
+      rumah_sakit VARCHAR(150) NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE,
+      INDEX idx_sakit_siswa (siswa_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  }catch(Throwable $ignored){}
+  // ponytail: BK log — upgrade path: tambah status (open/closed), lampiran file
+  try{
+    $pdo->exec("CREATE TABLE IF NOT EXISTS bimbingan_konseling (
+      id BIGINT AUTO_INCREMENT PRIMARY KEY,
+      siswa_id BIGINT NOT NULL,
+      tanggal DATE NOT NULL,
+      permasalahan TEXT NOT NULL,
+      tindakan TEXT NULL,
+      konselor_id BIGINT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      FOREIGN KEY (siswa_id) REFERENCES siswa(id) ON DELETE CASCADE,
+      FOREIGN KEY (konselor_id) REFERENCES users(id) ON DELETE SET NULL,
+      INDEX idx_bk_siswa (siswa_id), INDEX idx_bk_tanggal (tanggal)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+  }catch(Throwable $ignored){}
+  try{ $pdo->exec("ALTER TABLE kelas ADD COLUMN tahun_ajaran VARCHAR(20) NOT NULL DEFAULT '2024/2025'"); }catch(Throwable $e){ try{ $pdo->exec("ALTER TABLE kelas ADD COLUMN IF NOT EXISTS tahun_ajaran VARCHAR(20) NOT NULL DEFAULT '2024/2025'"); }catch(Throwable $e2){} }
+  try{ $pdo->prepare("INSERT IGNORE INTO settings(key_name,value) VALUES('tahun_ajaran_aktif',?)")->execute([date('Y').'/'.(date('Y')+1)]); }catch(Throwable $e){}
   try{
     $pdo->exec("CREATE TABLE IF NOT EXISTS dapodik_meta (
       id INT AUTO_INCREMENT PRIMARY KEY,

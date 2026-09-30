@@ -24,49 +24,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   } elseif (!_rate_ok($username)) {
     $error = 'Terlalu banyak percobaan, coba lagi 15 menit.';
   } else {
-    $ok = false; $user = null;
-    $isDemo = ($username==='admin' && $password==='admin123') || (strtolower($username)==='guru@belajar.id' && $password==='guru12345');
-    if ($isDemo && isset($pdo) && $pdo) {
+    $ok=false; $user=null;
+    if(isset($pdo) && $pdo){
       try{
-        $chk=$pdo->prepare("SELECT status FROM users WHERE username=? AND deleted_at IS NULL LIMIT 1");
-        $chk->execute([strtolower($username)==='guru@belajar.id'?'guru@belajar.id':$username]);
-        $st=$chk->fetchColumn();
-        if($st==='Nonaktif'){ $error='Akun nonaktif.'; $ok=false; }
-        else { $ok=true; }
-      }catch(Throwable $e){ $ok=true; }
-    } elseif ($isDemo) { $ok=true; }
-    if($ok && $isDemo){
-      $demo = ($username==='admin') ? ['id'=>1,'nama'=>'Admin TU','username'=>'admin','role'=>'Admin'] : ['id'=>2,'nama'=>'Guru BK','username'=>'guru@belajar.id','role'=>'Guru BK'];
-      $user=$demo;
-      if (isset($pdo) && $pdo) {
-        try {
-          $row = $pdo->prepare("SELECT id,password_hash FROM users WHERE username=? LIMIT 1");
-          $row->execute([$demo['username']]); $r=$row->fetch();
-          $hash = password_hash($password, PASSWORD_BCRYPT);
-          if (!$r) {
-            $pdo->prepare("INSERT INTO users(nama,username,password_hash,role,status) VALUES(?,?,?,?,?)")
-                ->execute([$demo['nama'],$demo['username'],$hash,$demo['role'],'Aktif']);
-            if ($demo['username']==='guru@belajar.id') {
-              $pdo->prepare("UPDATE users SET nip='1987654321' WHERE username=?")->execute([$demo['username']]);
-            }
-          } elseif (!password_verify($password, $r['password_hash'])) {
-            $pdo->prepare("UPDATE users SET password_hash=? WHERE id=?")->execute([$hash,$r['id']]);
-          } else { $user['id']=$r['id']; }
-        } catch(Throwable $e) {}
-      }
-    } elseif(!$isDemo) {
-      if (isset($pdo) && $pdo) {
-        try {
-          $stmt = $pdo->prepare("SELECT id,nama,username,role,password_hash,status FROM users WHERE username=? AND deleted_at IS NULL LIMIT 1");
-          $stmt->execute([$username]); $row=$stmt->fetch();
-          if (!$row) $error='Username atau password salah.';
-          elseif ($row['status']==='Nonaktif') $error='Akun nonaktif.';
-          elseif (password_verify($password, $row['password_hash'])) { $ok=true; $user=$row; }
-          else $error='Username atau password salah.';
-        } catch(Throwable $e){ $error='DB error: '.$e->getMessage(); }
-      } else {
-        $error='Username atau password salah. (DB belum siap — hanya admin/guru demo yang bisa login)';
-      }
+        $stmt=$pdo->prepare("SELECT id,nama,username,role,password_hash,status FROM users WHERE username=? AND deleted_at IS NULL LIMIT 1");
+        $stmt->execute([$username]); $row=$stmt->fetch();
+        if(!$row) $error='Username atau password salah.';
+        elseif($row['status']==='Nonaktif') $error='Akun nonaktif.';
+        elseif(password_verify($password,$row['password_hash'])){ $ok=true; $user=$row; }
+        else $error='Username atau password salah.';
+      }catch(Throwable $e){ error_log('login DB: '.$e->getMessage()); $error='Terjadi kesalahan sistem, coba lagi.'; }
+    } else {
+      error_log('login: DB not ready');
+      $error='Sistem belum siap, coba lagi nanti.';
     }
     if ($ok && $user) {
       _rate_reset($username);
@@ -82,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 $errQ=$_GET['error']??''; if($errQ&&!$error) $error=$errQ;
 $dbOk = isset($pdo) && $pdo ? true : false;
-$dbMsg=''; if(!$dbOk){ try{ new PDO("mysql:host=127.0.0.1;charset=utf8mb4",'root',''); }catch(Throwable $e){ $dbMsg=$e->getMessage(); } }
+$dbMsg=''; if(!$dbOk){ try{ new PDO("mysql:host=127.0.0.1;charset=utf8mb4",'root',''); }catch(Throwable $e){ error_log('login db probe: '.$e->getMessage()); $dbMsg='koneksi DB gagal'; } }
 ?>
 <!DOCTYPE html>
 <html lang="id" class="h-full">
@@ -96,12 +66,92 @@ $dbMsg=''; if(!$dbOk){ try{ new PDO("mysql:host=127.0.0.1;charset=utf8mb4",'root
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/lucide@latest"></script>
 <script>tailwind.config={darkMode:'class',theme:{extend:{fontFamily:{sans:['Inter','system-ui','sans-serif']},colors:{primary:{DEFAULT:'#2563EB',dark:'#1D4ED8'}},borderRadius:{card:'8px',input:'6px'},boxShadow:{card:'0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.06)'}}}}</script>
-<style>*{font-family:Inter,system-ui,sans-serif}:focus-visible{outline:2px solid #2563EB;outline-offset:2px}</style>
+<style>
+*{font-family:Inter,system-ui,sans-serif}
+:focus-visible{outline:2px solid #2563EB;outline-offset:2px}
+/* Mega Mendung Cirebonan — biru indigo deep, sesuai foto batik asli */
+.mm-wrap{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.mm-bg-light{position:absolute;inset:0;background:#eef2f8;transition:opacity .35s}
+.mm-bg-dark{position:absolute;inset:0;background:#060d22;transition:opacity .35s;opacity:0}
+.dark .mm-bg-light{opacity:0}
+.dark .mm-bg-dark{opacity:1}
+.mm-clouds{position:absolute;inset:0;width:100%;height:100%}
+.mm-light{opacity:.22}
+.dark .mm-light{opacity:0}
+.mm-dark{opacity:0}
+.dark .mm-dark{opacity:1}
+</style>
 </head>
 <body class="h-full bg-[#F8FAFC] dark:bg-[#0F172A] text-[#0F172A] dark:text-[#F1F5F9] antialiased overflow-x-hidden">
-<div class="fixed inset-0 -z-10 overflow-hidden pointer-events-none">
-  <div class="absolute -top-32 -right-32 w-[520px] h-[520px] bg-[#2563EB]/[0.07] rounded-full blur-[80px]"></div>
-  <div class="absolute -bottom-32 -left-32 w-[640px] h-[640px] bg-[#10B981]/[0.06] rounded-full blur-[80px]"></div>
+<div class="mm-wrap" aria-hidden="true">
+  <div class="mm-bg-light"></div>
+  <div class="mm-bg-dark"></div>
+  <!-- LIGHT mega mendung pudar -->
+  <svg class="mm-clouds mm-light" viewBox="0 0 820 600" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs><pattern id="mmL" width="410" height="295" patternUnits="userSpaceOnUse">
+      <g fill="none" stroke="#7d8fb3" stroke-linecap="round" stroke-linejoin="round">
+        <g opacity=".9">
+          <path d="M28 100 C28 58 70 32 112 44 C132 22 172 18 190 44 C212 70 182 102 138 96 C150 80 134 64 114 70 C98 74 88 86 97 100 C82 94 44 90 28 100 Z" fill="#cbd9ef" stroke-width="1.5"/>
+          <path d="M42 98 C42 66 72 48 106 56 C122 40 160 36 174 56 C186 74 166 90 134 86" fill="#d6e2f5" stroke-width="1.15"/>
+          <path d="M56 96 C56 72 80 60 106 66 C120 52 148 48 160 62 C168 74 154 84 132 82" fill="#e0eaf8" stroke-width=".95"/>
+          <path d="M142 68 C156 50 172 50 178 62 C184 74 174 86 160 82 C154 80 150 74 154 68" fill="none" stroke-width="1.05" stroke="#8fa0c0"/>
+        </g>
+        <g opacity=".85" transform="translate(218,6) scale(.90)">
+          <path d="M28 100 C28 58 70 32 112 44 C132 22 172 18 190 44 C212 70 182 102 138 96 C150 80 134 64 114 70 C98 74 88 86 97 100 C82 94 44 90 28 100 Z" fill="#cbd9ef" stroke-width="1.5"/>
+          <path d="M42 98 C42 66 72 48 106 56 C122 40 160 36 174 56" fill="#d6e2f5" stroke-width="1.15"/>
+          <path d="M142 68 C156 50 172 50 178 62" fill="none" stroke-width="1.05" stroke="#8fa0c0"/>
+        </g>
+        <g opacity=".88" transform="translate(62,172) scale(.98)">
+          <path d="M28 100 C28 58 70 32 112 44 C132 22 172 18 190 44 C212 70 182 102 138 96" fill="#cbd9ef" stroke-width="1.5"/>
+          <path d="M42 98 C42 66 72 48 106 56" fill="#d6e2f5" stroke-width="1.15"/>
+          <path d="M142 68 C156 50 172 50 178 62" fill="none" stroke-width="1.05" stroke="#8fa0c0"/>
+        </g>
+      </g>
+    </pattern></defs>
+    <rect width="100%" height="100%" fill="url(#mmL)"/>
+  </svg>
+  <!-- DARK mega mendung biru indigo deep navy — seperti foto -->
+  <svg class="mm-clouds mm-dark" viewBox="0 0 820 600" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+    <defs><pattern id="mmD" width="420" height="310" patternUnits="userSpaceOnUse">
+      <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+        <!-- awan utama -->
+        <g>
+          <path d="M24 112 C24 62 70 32 118 46 C140 22 180 16 200 46 C224 80 192 118 144 112 C158 94 140 72 118 80 C100 84 88 98 100 114 C82 108 40 102 24 112 Z" fill="#0f2a5a" stroke="#8fa6cc" stroke-width="1.7"/>
+          <path d="M40 110 C40 70 72 50 108 60 C126 40 166 34 182 60 C198 82 174 104 140 100" fill="#14346e" stroke="#8fa6cc" stroke-width="1.35"/>
+          <path d="M54 108 C54 74 80 60 108 70 C124 54 154 48 166 66 C176 82 160 96 138 92" fill="#1b3f85" stroke="#8fa6cc" stroke-width="1.1"/>
+          <path d="M68 102 C68 82 84 70 106 76 C120 64 140 60 150 72 C158 86 144 96 126 92" fill="#234f9a" stroke="#9ab0d4" stroke-width=".95" opacity=".95"/>
+          <!-- spiral biru muda outline -->
+          <path d="M144 76 C162 54 182 56 184 74 C186 92 168 102 150 94 C140 88 136 76 146 68 C152 64 158 68 158 74 C158 80 152 84 146 82" fill="none" stroke="#b8c7e3" stroke-width="1.2"/>
+          <path d="M182 60 C192 44 206 42 212 54 C218 66 208 80 194 76 C190 74 188 70 190 66" fill="none" stroke="#b8c7e3" stroke-width="1.05"/>
+          <path d="M108 60 C118 46 134 44 142 56 C148 68 138 80 124 76" fill="none" stroke="#b8c7e3" stroke-width=".95"/>
+          <!-- isian gringsing kecil -->
+          <path d="M168 48 C176 38 188 36 194 46 C200 56 190 66 178 62" fill="none" stroke="#b8c7e3" stroke-width=".85"/>
+        </g>
+        <!-- awan 2 -->
+        <g transform="translate(222,4) scale(.90)">
+          <path d="M24 112 C24 62 70 32 118 46 C140 22 180 16 200 46 C224 80 192 118 144 112 C158 94 140 72 118 80 C100 84 88 98 100 114 C82 108 40 102 24 112 Z" fill="#0f2a5a" stroke="#8fa6cc" stroke-width="1.7"/>
+          <path d="M40 110 C40 70 72 50 108 60 C126 40 166 34 182 60" fill="#14346e" stroke="#8fa6cc" stroke-width="1.35"/>
+          <path d="M144 76 C162 54 182 56 184 74 C186 92 168 102 150 94" fill="none" stroke="#b8c7e3" stroke-width="1.2"/>
+        </g>
+        <!-- awan 3 bawah -->
+        <g transform="translate(58,176) scale(.97)">
+          <path d="M24 112 C24 62 70 32 118 46 C140 22 180 16 200 46 C224 80 192 118 144 112 C158 94 140 72 118 80" fill="#0f2a5a" stroke="#8fa6cc" stroke-width="1.7"/>
+          <path d="M40 110 C40 70 72 50 108 60 C126 40 166 34 182 60" fill="#14346e" stroke="#8fa6cc" stroke-width="1.35"/>
+          <path d="M144 76 C162 54 182 56 184 74" fill="none" stroke="#b8c7e3" stroke-width="1.2"/>
+        </g>
+        <!-- awan kecil isian -->
+        <g opacity=".9" transform="translate(312,132) scale(.70)">
+          <path d="M24 112 C24 62 70 32 118 46 C140 22 180 16 200 46 C224 80 192 118 144 112" fill="#0f2a5a" stroke="#8fa6cc" stroke-width="1.5"/>
+          <path d="M144 76 C162 54 182 56 184 74" fill="none" stroke="#b8c7e3" stroke-width="1.1"/>
+        </g>
+        <g fill="none" stroke="#8fa6cc" opacity=".65">
+          <path d="M350 40 C358 30 370 28 376 40 C382 52 372 62 360 58" stroke-width=".9"/>
+          <path d="M372 172 C380 162 392 160 398 172 C404 184 394 194 382 190" stroke-width=".85"/>
+        </g>
+      </g>
+    </pattern></defs>
+    <rect width="100%" height="100%" fill="url(#mmD)"/>
+  </svg>
 </div>
 <div class="min-h-full flex flex-col lg:flex-row">
   <div class="hidden lg:flex lg:w-[52%] xl:w-[56%] bg-[#0F172A] relative overflow-hidden flex-col justify-between p-8 xl:p-10">
@@ -129,20 +179,28 @@ $dbMsg=''; if(!$dbOk){ try{ new PDO("mysql:host=127.0.0.1;charset=utf8mb4",'root
           <h1 class="text-[22px] font-bold tracking-tight">Masuk ke akun</h1>
           <p class="text-[13px] text-[#475569] dark:text-[#94A3B8] mt-1">Guru pakai <b>nama@belajar.id</b>.</p>
           <?php if($error): ?><div class="mt-4 rounded-input border-l-4 border-[#EF4444] bg-[#FFF1F2] px-3 py-2.5 text-[13px]"><?=htmlspecialchars($error)?></div><?php endif; ?>
-          <?php if(!$dbOk): ?><div class="mt-3 rounded-input border-l-4 border-amber-500 bg-[#FFFBEB] px-3 py-2.5 text-xs">DB belum terhubung (<?=htmlspecialchars($dbMsg?:'cek XAMPP MySQL Started?')?>) — tapi login <b>admin/admin123</b> & <b>guru@belajar.id/guru12345</b> tetap bisa. Start MySQL lalu refresh untuk mode penuh. <a href="cek_db.php" class="underline font-medium">Cek DB →</a></div><?php endif; ?>
+          <?php if(!$dbOk): ?><div class="mt-3 rounded-input border-l-4 border-amber-500 bg-[#FFFBEB] px-3 py-2.5 text-xs">DB belum terhubung (<?=htmlspecialchars($dbMsg?:'cek Laragon MySQL Started?')?>) — start MySQL lalu refresh. <a href="cek_db.php" class="underline font-medium">Cek DB →</a></div><?php endif; ?>
           <form method="POST" action="login.php" class="space-y-4 mt-4">
-            <div><label class="block text-[13px] font-medium mb-1.5">Username <span class="text-[#EF4444]">*</span></label><input name="username" id="username" required placeholder="admin atau guru@belajar.id" class="w-full h-10 px-3 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#0F172A] text-sm"></div>
+            <div><label class="block text-[13px] font-medium mb-1.5">Username <span class="text-[#EF4444]">*</span></label><input name="username" id="username" required placeholder="admin atau nama@belajar.id" class="w-full h-10 px-3 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#0F172A] text-sm" autocomplete="username"></div>
             <div><label class="block text-[13px] font-medium mb-1.5">Password <span class="text-[#EF4444]">*</span></label>
-              <div class="relative"><input name="password" id="password" type="password" required minlength="8" placeholder="Minimal 8 karakter" class="w-full h-10 px-3 pr-10 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#0F172A] text-sm"><button type="button" id="togglePw" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-[#64748B]"><i data-lucide="eye" class="w-4 h-4"></i></button></div>
+              <div class="relative"><input name="password" id="password" type="password" required minlength="8" placeholder="Minimal 8 karakter" class="w-full h-10 px-3 pr-10 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#0F172A] text-sm" autocomplete="current-password"><button type="button" id="togglePw" class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-[#64748B]"><i data-lucide="eye" class="w-4 h-4"></i></button></div>
             </div>
             <button type="submit" class="w-full h-10 rounded-input bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold">Masuk</button>
           </form>
         </div>
-        <div class="grid grid-cols-2 gap-3 mt-4">
-          <div class="rounded-card border bg-white dark:bg-[#1E293B] p-3"><div class="text-[11px] font-semibold uppercase text-[#475569]">Admin</div><div class="text-sm font-medium">admin / admin123</div><button type="button" data-fill="admin" class="mt-2 text-xs font-medium text-[#2563EB] hover:underline">Isi otomatis →</button></div>
-          <div class="rounded-card border bg-white dark:bg-[#1E293B] p-3"><div class="text-[11px] font-semibold uppercase text-[#475569]">Guru BK</div><div class="text-sm font-medium truncate">guru@belajar.id / guru12345</div><button type="button" data-fill="guru" class="mt-2 text-xs font-medium text-[#2563EB] hover:underline">Isi otomatis →</button></div>
+        <div class="mt-4 bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card p-4">
+          <h3 class="text-xs font-semibold flex items-center gap-1.5"><i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i> Cara masuk</h3>
+          <ul class="mt-2 space-y-1.5 text-xs text-[#475569] dark:text-[#94A3B8] leading-5 list-disc list-inside">
+            <li><b>Admin:</b> minta akun ke Tata Usaha.</li>
+            <li><b>Guru:</b> pakai <b>nama@belajar.id</b> sesuai Master User.</li>
+            <li>Lupa password? Hubungi Admin untuk reset.</li>
+          </ul>
+          <div class="mt-3 flex flex-wrap gap-2">
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#EFF6FF] text-[#2563EB] text-[11px] font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-[#2563EB]"></span> DB siap</span>
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Soft-delete aktif</span>
+            <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-50 text-amber-700 text-[11px] font-semibold">CSRF on</span>
+          </div>
         </div>
-        <p class="text-center text-[11px] text-[#94A3B8] mt-3">Buka via <b>http://localhost/kesiswaanv2/login.php</b> (bukan file://).</p>
       </div>
     </div>
   </div>
@@ -153,7 +211,7 @@ const html=document.documentElement; const s=localStorage.getItem('kesiswaan_the
 if(s==='dark'||(!s&&matchMedia('(prefers-color-scheme:dark)').matches)) html.classList.add('dark');
 document.getElementById('themeToggle').onclick=()=>{ html.classList.toggle('dark'); localStorage.setItem('kesiswaan_theme',html.classList.contains('dark')?'dark':'light'); lucide.createIcons(); };
 document.getElementById('togglePw').onclick=()=>{ const p=document.getElementById('password'); p.type=p.type==='password'?'text':'password'; };
-document.querySelectorAll('[data-fill]').forEach(b=>b.onclick=()=>{ if(b.dataset.fill==='admin'){ username.value='admin'; password.value='admin123'; } else{ username.value='guru@belajar.id'; password.value='guru12345'; } });
+
 </script>
 </body>
 </html>

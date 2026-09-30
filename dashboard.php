@@ -1,7 +1,9 @@
 <?php
 $active='dashboard'; $title='Dashboard';
-require __DIR__.'/includes/header.php';
 require __DIR__.'/config/db.php';
+require_once __DIR__.'/includes/ta.php';
+require __DIR__.'/includes/header.php';
+$ta = $ta_aktif ?? get_ta_aktif($pdo);
 $npsn='69944965'; $ta='2024/2025 Semester Gasal';
 $metaSekolah='SMKN 1 LEUWIMUNDING'; $tglUnduh=null; $pengunduh=null; $emailPengunduh=null;
 try{ $dm=$pdo->query("SELECT sekolah,npsn,tahun_ajaran,tanggal_unduh,pengunduh,email_pengunduh FROM dapodik_meta WHERE id=1 LIMIT 1")->fetch(); if($dm){ if(!empty($dm['sekolah'])) $metaSekolah=$dm['sekolah']; if(!empty($dm['npsn'])) $npsn=$dm['npsn']; if(!empty($dm['tahun_ajaran'])) $ta=$dm['tahun_ajaran']; $tglUnduh=$dm['tanggal_unduh']??null; $pengunduh=$dm['pengunduh']??null; $emailPengunduh=$dm['email_pengunduh']??null; } }catch(Throwable $e){}
@@ -13,9 +15,12 @@ $threshold=76; $totalSiswa=0; $totalKelas=0; $totalPelBulan=0; $bermasalah=0;
 $top=[]; $chartLabels=[]; $chartData=[];
 if(isset($pdo) && $pdo){
   try{ $v=$pdo->query("SELECT value FROM settings WHERE key_name='threshold_poin_kritis' LIMIT 1")->fetchColumn(); if($v!==false&&$v!=='') $threshold=(int)$v; }catch(Throwable $e){}
-  try{ $r=$pdo->query("SELECT tahun_ajaran FROM kelas WHERE deleted_at IS NULL ORDER BY tahun_ajaran DESC LIMIT 1")->fetchColumn(); if($r) $ta=$r; }catch(Throwable $e){}
-  try{ $totalSiswa=(int)$pdo->query("SELECT COUNT(*) FROM siswa WHERE deleted_at IS NULL AND status='Aktif'")->fetchColumn(); }catch(Throwable $e){}
-  try{ $totalKelas=(int)$pdo->query("SELECT COUNT(*) FROM kelas WHERE deleted_at IS NULL")->fetchColumn(); }catch(Throwable $e){}
+  try{
+    $st=$pdo->prepare("SELECT COUNT(*) FROM siswa s JOIN kelas k ON k.id=s.kelas_id WHERE s.deleted_at IS NULL AND s.status='Aktif' AND k.tahun_ajaran=? AND k.deleted_at IS NULL"); $st->execute([$ta]); $totalSiswa=(int)$st->fetchColumn();
+  }catch(Throwable $e){ try{ $totalSiswa=(int)$pdo->query("SELECT COUNT(*) FROM siswa WHERE deleted_at IS NULL AND status='Aktif'")->fetchColumn(); }catch(Throwable $e2){} }
+  try{
+    $st=$pdo->prepare("SELECT COUNT(*) FROM kelas WHERE deleted_at IS NULL AND tahun_ajaran=?"); $st->execute([$ta]); $totalKelas=(int)$st->fetchColumn();
+  }catch(Throwable $e){ try{ $totalKelas=(int)$pdo->query("SELECT COUNT(*) FROM kelas WHERE deleted_at IS NULL")->fetchColumn(); }catch(Throwable $e2){} }
   try{ $totalPelBulan=(int)$pdo->query("SELECT COUNT(*) FROM pelanggaran_siswa WHERE DATE_FORMAT(tanggal,'%Y-%m')=DATE_FORMAT(CURDATE(),'%Y-%m')")->fetchColumn(); }catch(Throwable $e){}
   try{
     $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') as kelas, COALESCE(SUM(ps.poin_final),0) as poin, MAX(ps.tanggal) as tgl FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin > ? ORDER BY poin DESC LIMIT 10");
@@ -24,7 +29,7 @@ if(isset($pdo) && $pdo){
   }catch(Throwable $e){}
   // top 10: always from actual poin (if bermasalah empty, still show ranking)
   try{
-    $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') as kelas, COALESCE(SUM(ps.poin_final),0) as poin, MAX(ps.tanggal) as tgl, s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id ORDER BY poin DESC, s.nama ASC LIMIT 10");
+    $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') as kelas, COALESCE(SUM(ps.poin_final),0) as poin, MAX(ps.tanggal) as tgl, s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin>0 ORDER BY poin DESC, s.nama ASC LIMIT 10");
     $st->execute([$ta]);
     $rank=1; while($r=$st->fetch()){ $r['rank']=$rank++; $r['poin']=(int)$r['poin']; if($r['poin']>$threshold) $r['badge']='Kritis'; elseif($r['poin']>50) $r['badge']='Tinggi'; elseif($r['poin']>25) $r['badge']='Sedang'; else $r['badge']='Rendah'; $top[]=$r; }
     if(empty($top)) $bermasalah=0;
@@ -72,8 +77,14 @@ $chartMingguanLabels=array_column($sumMingguan,'label'); $chartMingguanData=arra
 $chartTahunanLabels=array_column($sumTahunan,'label'); $chartTahunanData=array_column($sumTahunan,'count');
 $chartBulanan6Labels=$chartLabels; $chartBulanan6Data=$chartData;
 $sumBulanan6=array_slice($sumBulanan,-6);
-$ultah=[]; try{ $rs=$pdo->query("SELECT s.id,s.nama,s.nipd,s.tanggal_lahir,s.foto,COALESCE(k.nama_kelas,'—') kelas,TIMESTAMPDIFF(YEAR,s.tanggal_lahir,CURDATE()) umur FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id WHERE s.deleted_at IS NULL AND s.status='Aktif' AND s.tanggal_lahir IS NOT NULL AND MONTH(s.tanggal_lahir)=MONTH(CURDATE()) AND DAY(s.tanggal_lahir)=DAY(CURDATE()) ORDER BY s.nama ASC"); $ultah=$rs->fetchAll(); }catch(Throwable $e){}
 $isDemoTop = empty($top);
+$kritis=[];$tinggi=[];$sedang=[];$rendah=[];
+if(isset($pdo)&&$pdo){
+  try{ $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') kelas,COALESCE(SUM(ps.poin_final),0) poin,MAX(ps.tanggal) tgl,s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin>? ORDER BY poin DESC LIMIT 5"); $st->execute([$ta,$threshold]); while($r=$st->fetch()){$r['poin']=(int)$r['poin'];$r['badge']='Kritis';$kritis[]=$r;} }catch(Throwable $e){}
+  try{ $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') kelas,COALESCE(SUM(ps.poin_final),0) poin,MAX(ps.tanggal) tgl,s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin>50 AND poin<=? ORDER BY poin DESC LIMIT 5"); $st->execute([$ta,$threshold]); while($r=$st->fetch()){$r['poin']=(int)$r['poin'];$r['badge']='Tinggi';$tinggi[]=$r;} }catch(Throwable $e){}
+  try{ $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') kelas,COALESCE(SUM(ps.poin_final),0) poin,MAX(ps.tanggal) tgl,s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin>25 AND poin<=50 ORDER BY poin DESC LIMIT 5"); $st->execute([$ta]); while($r=$st->fetch()){$r['poin']=(int)$r['poin'];$r['badge']='Sedang';$sedang[]=$r;} }catch(Throwable $e){}
+  try{ $st=$pdo->prepare("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') kelas,COALESCE(SUM(ps.poin_final),0) poin,MAX(ps.tanggal) tgl,s.foto FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id LEFT JOIN pelanggaran_siswa ps ON ps.siswa_id=s.id AND ps.tahun_ajaran=? WHERE s.deleted_at IS NULL GROUP BY s.id HAVING poin>0 AND poin<=25 ORDER BY poin DESC, s.nama ASC LIMIT 5"); $st->execute([$ta]); while($r=$st->fetch()){$r['poin']=(int)$r['poin'];$r['badge']='Rendah';$rendah[]=$r;} }catch(Throwable $e){}
+}
 $stats=[
   ['label'=>'Total Siswa','value'=>number_format($totalSiswa,'0',',','.'),'trend'=>'+4.2%','up'=>true,'icon'=>'users','sub'=>'Aktif TA '.$ta],
   ['label'=>'Total Kelas','value'=> (string)$totalKelas,'trend'=>'+2','up'=>true,'icon'=>'school','sub'=>'Rombel aktif'],
@@ -98,44 +109,7 @@ function badgeClass($b){
     </div>
   </div>
 </div>
-<div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card dark:shadow-none overflow-hidden">
-  <div class="px-4 py-3 border-b border-[#E2E8F0] dark:border-[#334155] flex items-center justify-between">
-    <h3 class="font-semibold text-sm flex items-center gap-2"><i data-lucide="cake" class="w-4 h-4 text-pink-500"></i> Ulang Tahun Hari Ini <span class="ml-1 inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 text-xs font-bold"><?=count($ultah)?></span></h3>
-    <span class="text-xs text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($tglHari)?></span>
-  </div>
-  <?php if(empty($ultah)): ?>
-    <div class="px-4 py-8 text-center text-sm text-[#94A3B8] flex flex-col items-center gap-2"><i data-lucide="calendar-x" class="w-8 h-8 opacity-50"></i> Tidak ada siswa yang berulang tahun hari ini</div>
-  <?php else: ?>
-    <div class="hidden md:block overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase tracking-wide text-[#475569] dark:text-[#94A3B8]"><tr><th class="text-left px-4 py-2.5 font-semibold">Foto</th><th class="text-left px-4 py-2.5 font-semibold">Nama</th><th class="text-left px-4 py-2.5 font-semibold">NIPD</th><th class="text-left px-4 py-2.5 font-semibold">Kelas</th><th class="text-left px-4 py-2.5 font-semibold">Tanggal Lahir</th><th class="text-left px-4 py-2.5 font-semibold">Usia</th></tr></thead>
-        <tbody class="divide-y divide-[#E2E8F0] dark:divide-[#334155]">
-          <?php foreach($ultah as $u2): $f=$u2['foto']?(str_starts_with($u2['foto'],'http')?$u2['foto']:'/kesiswaanv2/assets/uploads/foto_siswa/'.rawurlencode($u2['foto'])):'https://i.pravatar.cc/100?u='.urlencode($u2['nipd']); $tglLahir=date('d M Y',strtotime($u2['tanggal_lahir'])); ?>
-          <tr class="hover:bg-[#F8FAFC] dark:hover:bg-white/[0.03]">
-            <td class="px-4 py-2.5"><img src="<?=$f?>" class="w-8 h-8 rounded-full object-cover"></td>
-            <td class="px-4 py-2.5"><a href="/kesiswaanv2/siswa/detail.php?id=<?=$u2['id']?>" class="font-medium hover:underline flex items-center gap-1.5"><?=htmlspecialchars($u2['nama'])?> <span class="inline-flex px-1.5 py-0.5 rounded-full bg-pink-100 dark:bg-pink-500/20 text-pink-600 dark:text-pink-400 text-[11px] font-semibold">🎂 Hari ini</span></a></td>
-            <td class="px-4 py-2.5 text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($u2['nipd'])?></td>
-            <td class="px-4 py-2.5"><?=htmlspecialchars($u2['kelas'])?></td>
-            <td class="px-4 py-2.5 text-xs"><?=htmlspecialchars($tglLahir)?></td>
-            <td class="px-4 py-2.5 font-bold text-pink-600 dark:text-pink-400"><?=$u2['umur']?> th</td>
-          </tr>
-          <?php endforeach; ?>
-        </tbody>
-      </table>
-    </div>
-    <div class="md:hidden divide-y divide-[#E2E8F0] dark:divide-[#334155]">
-      <?php foreach($ultah as $u2): $f=$u2['foto']?(str_starts_with($u2['foto'],'http')?$u2['foto']:'/kesiswaanv2/assets/uploads/foto_siswa/'.rawurlencode($u2['foto'])):'https://i.pravatar.cc/100?u='.urlencode($u2['nipd']); ?>
-      <a href="/kesiswaanv2/siswa/detail.php?id=<?=$u2['id']?>" class="flex items-center gap-3 p-4">
-        <img src="<?=$f?>" class="w-10 h-10 rounded-full object-cover">
-        <div class="min-w-0 flex-1"><div class="text-sm font-semibold truncate flex items-center gap-1.5"><?=htmlspecialchars($u2['nama'])?> <span class="text-[11px]">🎂</span></div><div class="text-xs text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($u2['nipd'])?> · <?=htmlspecialchars($u2['kelas'])?> · <?=htmlspecialchars(date('d M Y',strtotime($u2['tanggal_lahir'])))?></div></div>
-        <div class="text-sm font-bold text-pink-600 shrink-0"><?=$u2['umur']?> th</div>
-      </a>
-      <?php endforeach; ?>
-    </div>
-  <?php endif; ?>
-  </div>
-
-  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
+  <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
 <?php foreach($stats as $s): ?>
   <div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card dark:shadow-none p-4">
     <div class="flex items-start justify-between">
@@ -174,8 +148,61 @@ function badgeClass($b){
     <div class="h-[220px]"><canvas id="chartTahunan"></canvas></div>
   </div>
 </div>
-<div class="mt-2 rounded-lg bg-[#FFFBEB] dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 px-3 py-2 text-xs flex gap-2"><i data-lucide="info" class="w-4 h-4 text-amber-600 shrink-0"></i><span>Threshold <b><?=$threshold?></b> — <a href="/kesiswaanv2/pengaturan.php" class="underline font-medium">Pengaturan</a><?php if($isDemoTop): ?> <span class="text-[#94A3B8]">(belum ada siswa)</span><?php endif; ?></span></div>
-
+<div class="space-y-4 mt-4">
+<?php
+$cats=[
+  ['label'=>'Kritis','sub'=>'&gt;'.$threshold,'rows'=>$kritis,'dot'=>'bg-[#DC2626]'],
+  ['label'=>'Tinggi','sub'=>'51–'.$threshold,'rows'=>$tinggi,'dot'=>'bg-[#EA580C]'],
+  ['label'=>'Sedang','sub'=>'26–50','rows'=>$sedang,'dot'=>'bg-[#CA8A04]'],
+  ['label'=>'Rendah','sub'=>'1–25','rows'=>$rendah,'dot'=>'bg-[#16A34A]'],
+];
+foreach($cats as $cat): ?>
+  <div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card dark:shadow-none overflow-hidden">
+    <div class="px-4 py-3 border-b border-[#E2E8F0] dark:border-[#334155] flex items-center justify-between">
+      <h3 class="font-semibold text-sm flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full <?=$cat['dot']?>"></span> <?=$cat['label']?> <span class="text-[11px] font-normal text-[#94A3B8]"><?=$cat['sub']?></span> <span class="inline-flex items-center justify-center min-w-[22px] h-5 px-1.5 rounded-full bg-slate-100 dark:bg-white/10 text-xs font-bold"><?=count($cat['rows'])?></span></h3>
+      <a href="/kesiswaanv2/siswa/index.php" class="text-xs font-medium text-[#2563EB] dark:text-[#93C5FD] hover:underline">Lihat semua →</a>
+    </div>
+    <div class="hidden md:block overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase tracking-wide text-[#475569] dark:text-[#94A3B8]">
+          <tr><th class="text-left px-4 py-2.5 font-semibold">#</th><th class="text-left px-4 py-2.5 font-semibold">Siswa</th><th class="text-left px-4 py-2.5 font-semibold">NIPD</th><th class="text-left px-4 py-2.5 font-semibold">Kelas</th><th class="text-left px-4 py-2.5 font-semibold">Poin</th><th class="text-left px-4 py-2.5 font-semibold">Status</th><th class="text-left px-4 py-2.5 font-semibold">Tgl Terakhir</th></tr>
+        </thead>
+        <tbody class="divide-y divide-[#E2E8F0] dark:divide-[#334155]">
+          <?php if(empty($cat['rows'])): ?><tr><td colspan="7" class="px-4 py-8 text-center text-sm text-[#94A3B8]">Tidak ada data</td></tr><?php endif; ?>
+          <?php foreach($cat['rows'] as $i=>$r): ?>
+          <tr class="hover:bg-[#F8FAFC] dark:hover:bg-white/[0.03]">
+            <td class="px-4 py-2.5 font-semibold"><?= $i+1 ?></td>
+            <td class="px-4 py-2.5"><a href="/kesiswaanv2/siswa/detail.php?id=<?=$r['id']?>" class="flex items-center gap-2 hover:underline"><?php $foto=$r['foto']? (str_starts_with($r['foto'],'http')?$r['foto']:'/kesiswaanv2/assets/uploads/foto_siswa/'.rawurlencode($r['foto'])) : 'https://i.pravatar.cc/100?u='.urlencode($r['nipd']); ?><img src="<?=$foto?>" class="w-8 h-8 rounded-full object-cover"><span class="font-medium"><?=htmlspecialchars($r['nama'])?></span></a></td>
+            <td class="px-4 py-2.5 text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($r['nipd'])?></td>
+            <td class="px-4 py-2.5"><?=htmlspecialchars($r['kelas'])?></td>
+            <td class="px-4 py-2.5 font-bold"><?=$r['poin']?></td>
+            <td class="px-4 py-2.5"><span class="inline-flex px-2 py-1 rounded-badge text-xs font-semibold <?=badgeClass($r['badge'])?>"><?=htmlspecialchars($r['badge'])?></span></td>
+            <td class="px-4 py-2.5 text-xs text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($r['tgl']??'-')?></td>
+          </tr>
+          <?php endforeach; ?>
+        </tbody>
+      </table>
+    </div>
+    <div class="md:hidden divide-y divide-[#E2E8F0] dark:divide-[#334155]">
+      <?php if(empty($cat['rows'])): ?><div class="px-4 py-8 text-center text-sm text-[#94A3B8]">Tidak ada data</div><?php endif; ?>
+      <?php foreach($cat['rows'] as $i=>$r): $foto=$r['foto']? (str_starts_with($r['foto'],'http')?$r['foto']:'/kesiswaanv2/assets/uploads/foto_siswa/'.rawurlencode($r['foto'])) : 'https://i.pravatar.cc/100?u='.urlencode($r['nipd']); ?>
+      <a href="/kesiswaanv2/siswa/detail.php?id=<?=$r['id']?>" class="flex items-center gap-3 p-4">
+        <span class="w-7 h-7 rounded-full bg-[#0F172A] text-white flex items-center justify-center text-xs font-bold shrink-0"><?= $i+1 ?></span>
+        <img src="<?=$foto?>" class="w-10 h-10 rounded-full object-cover">
+        <div class="min-w-0 flex-1">
+          <div class="text-sm font-semibold truncate"><?=htmlspecialchars($r['nama'])?></div>
+          <div class="text-xs text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($r['nipd'])?> · <?=htmlspecialchars($r['kelas'])?></div>
+        </div>
+        <div class="text-right shrink-0">
+          <div class="text-sm font-bold"><?=$r['poin']?></div>
+          <span class="inline-flex px-2 py-0.5 rounded-badge text-[11px] font-semibold <?=badgeClass($r['badge'])?>"><?=htmlspecialchars($r['badge'])?></span>
+        </div>
+      </a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+<?php endforeach; ?>
+</div>
 <div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card dark:shadow-none mt-4 overflow-hidden">
   <div class="px-4 py-3 border-b border-[#E2E8F0] dark:border-[#334155] flex items-center justify-between">
     <h3 class="font-semibold text-sm">Top 10 — Poin Tertinggi (tahun ajaran berjalan)</h3>

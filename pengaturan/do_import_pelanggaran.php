@@ -23,7 +23,7 @@ try{
     while(($r=fgetcsv($fh,0,$delim))!==false){ $empty=true; foreach($r as $x) if(trim((string)$x)!==''){ $empty=false; break; } if(!$empty) $rows[]=$r; }
     fclose($fh);
   }
-}catch(Throwable $e){ http_response_code(400); echo json_encode(['success'=>false,'error'=>'Gagal parse: '.$e->getMessage()]); exit; }
+}catch(Throwable $e){ error_log('import pelanggaran parse: '.$e->getMessage()); http_response_code(400); echo json_encode(['success'=>false,'error'=>'Gagal parse file']); exit; }
 if(empty($rows)){ http_response_code(400); echo json_encode(['success'=>false,'error'=>'File kosong']); exit; }
 $hdr=array_map(fn($x)=>strtolower(trim(preg_replace('/[^a-z_]/','',strtolower((string)$x)))), $rows[0]);
 $hasHdr=in_array('kode',$hdr)&&in_array('nama',$hdr);
@@ -53,8 +53,8 @@ foreach($data as $r){
     $rr['status']='ok'; $results[]=$rr; $ok++;
   }catch(Throwable $e){
     if(str_contains($e->getMessage(),'Duplicate')||str_contains($e->getMessage(),'UNIQUE')){
-      try{ $pdo->prepare("UPDATE jenis_pelanggaran SET nama=?,kategori=?,bobot_poin=?,deskripsi=?,konsekuensi=?,deleted_at=NULL WHERE kode=?")->execute([$nama,$kategori,$bobot,$desk?:null,$kons?:null,$kode]); $rr['status']='updated'; $results[]=$rr; $ok++; }catch(Throwable $e2){ $rr['status']='gagal'; $rr['error']=$e2->getMessage(); $results[]=$rr; $fail++; }
-    } else { $rr['status']='gagal'; $rr['error']=$e->getMessage(); $results[]=$rr; $fail++; }
+      try{ $pdo->prepare("UPDATE jenis_pelanggaran SET nama=?,kategori=?,bobot_poin=?,deskripsi=?,konsekuensi=?,deleted_at=NULL WHERE kode=?")->execute([$nama,$kategori,$bobot,$desk?:null,$kons?:null,$kode]); $rr['status']='updated'; $results[]=$rr; $ok++; }catch(Throwable $e2){ error_log('import pelanggaran update: '.$e2->getMessage()); $rr['status']='gagal'; $rr['error']='Gagal update'; $results[]=$rr; $fail++; }
+    } else { error_log('import pelanggaran: '.$e->getMessage()); $rr['status']='gagal'; $rr['error']='Gagal import baris ini'; $results[]=$rr; $fail++; }
   }
 }
 $deleted=0;

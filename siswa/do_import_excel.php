@@ -105,7 +105,7 @@ try{
       if($empty) continue; $rows[]=array_map(fn($x)=>cleanVal($x),$r);
     } fclose($fh);
   }
-  if(empty($rows)){ http_response_code(400); echo json_encode(['success'=>false,'error'=>'Gagal parse: '.$e->getMessage()]); exit; }
+  if(empty($rows)){ error_log('import dapodik parse: '.$e->getMessage()); http_response_code(400); echo json_encode(['success'=>false,'error'=>'Gagal parse file']); exit; }
 }
 if(empty($rows)){ http_response_code(400); echo json_encode(['success'=>false,'error'=>'file kosong']); exit; }
 // parse meta dapodik dari baris atas (sebelum header): sekolah, npsn, tahun, tgl unduh, pengunduh
@@ -184,10 +184,14 @@ if(!empty($cleaned)){
   $firstKeys=array_map(fn($v)=>nkey($v??''),$cleaned[0]);
   if(in_array('tahunlahir',$firstKeys)||in_array('penghasilan',$firstKeys)) $cleaned=array_slice($cleaned,1);
 }
+$taImport = trim($_GET['tahun_ajaran'] ?? $_POST['tahun_ajaran'] ?? $dapodikMeta['tahun_ajaran'] ?? '');
+if($taImport==='') $taImport = date('Y').'/'.(date('Y')+1);
+$taImport = preg_replace('/\s+Semester.*$/i','', $taImport);
+try{ $pdo->exec("ALTER TABLE kelas ADD COLUMN IF NOT EXISTS tahun_ajaran VARCHAR(20) NOT NULL DEFAULT '2024/2025'"); }catch(Throwable $e){ try{ $pdo->exec("ALTER TABLE kelas ADD COLUMN tahun_ajaran VARCHAR(20) NOT NULL DEFAULT '2024/2025'"); }catch(Throwable $e2){} }
 $kelasMap=[];
 try{
-  $st=$pdo->query("SELECT id,nama_kelas FROM kelas WHERE deleted_at IS NULL");
-  foreach($st as $r) $kelasMap[strtolower(trim($r['nama_kelas']))]=$r['id'];
+  $st=$pdo->query("SELECT id,nama_kelas,tahun_ajaran FROM kelas WHERE deleted_at IS NULL");
+  foreach($st as $r) $kelasMap[strtolower(trim($r['nama_kelas'])).'|'.trim($r['tahun_ajaran'])]=$r['id'];
 }catch(Throwable $e){}
 $pdCols=array_keys($COLUMN_MAP); // not needed; we use $dbCols keys
 $seen=[]; $results=[]; $ok=0; $fail=0; $skippedUpdate=0;
@@ -219,12 +223,12 @@ foreach($cleaned as $idx=>$rec){
   // rombel -> kelas mapping (only for preview/save to siswa; peserta_didik always saves rombel string)
   $kelasId=null;
   if($rombel){
-    $key=strtolower(trim($rombel));
+    $key=strtolower(trim($rombel)).'|'.trim($taImport);
     if(isset($kelasMap[$key])) $kelasId=$kelasMap[$key];
     else{
       if($autoKelas){
         $ting=tingkatPHP($rombel);
-        try{ $ins=$pdo->prepare("INSERT INTO kelas(nama_kelas,tingkat) VALUES(?,?)"); $ins->execute([$rombel,$ting]); $kelasId=(int)$pdo->lastInsertId(); $kelasMap[$key]=$kelasId; }catch(Throwable $e){}
+        try{ $ins=$pdo->prepare("INSERT INTO kelas(nama_kelas,tingkat,tahun_ajaran) VALUES(?,?,?)"); $ins->execute([$rombel,$ting,$taImport]); $kelasId=(int)$pdo->lastInsertId(); $kelasMap[$key]=$kelasId; }catch(Throwable $e){ try{ $ins=$pdo->prepare("INSERT INTO kelas(nama_kelas,tingkat) VALUES(?,?)"); $ins->execute([$rombel,$ting]); $kelasId=(int)$pdo->lastInsertId(); }catch(Throwable $e2){} }
       }
       if($kelasId===null && !$dryRun){ /* peserta_didik tetap disimpan, siswa sync ditolak nanti */ }
     }
@@ -297,6 +301,7 @@ foreach($cleaned as $idx=>$rec){
   }
   $r['status']=$isExisting && $upsert?'updated':'ok'; $results[]=$r; $ok++;
 }
+if(!$dryRun){ try{ $pdo->prepare("INSERT INTO settings(key_name,value) VALUES('tahun_ajaran_aktif',?) ON DUPLICATE KEY UPDATE value=VALUES(value)")->execute([$taImport]); }catch(Throwable $e){} $_SESSION['ta_aktif'] = $taImport; }
 // log to dapodik_sync_log if not dryRun
 if(!$dryRun && ($ok>0||$fail>0)){
   try{ $pdo->prepare("INSERT INTO dapodik_sync_log(jumlah_baru,jumlah_diperbarui,jumlah_gagal,dilakukan_oleh) VALUES(?,?,?,?)")->execute([$ok,$skippedUpdate,$fail,$_SESSION['user']['id']??null]); }catch(Throwable $e){}

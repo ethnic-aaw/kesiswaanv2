@@ -1,4 +1,9 @@
-<?php $active='user'; $title='Master User'; require __DIR__.'/../includes/header.php';
+<?php $active='user'; $title='Master User';
+if(session_status()===PHP_SESSION_NONE) session_start();
+require __DIR__.'/../includes/auth.php';
+if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_user');
+require __DIR__.'/../includes/header.php';
 $tab=$_GET['role']??'semua';
 $users=[
   ['id'=>1,'nama'=>'Admin TU','username'=>'admin','role'=>'Admin','kelas'=>'—','status'=>'Aktif'],

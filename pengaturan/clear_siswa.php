@@ -20,5 +20,6 @@ try{
   try{ $pdo->exec("INSERT INTO dapodik_sync_log(jumlah_baru,jumlah_diperbarui,jumlah_gagal,dilakukan_oleh) VALUES(0,0,0,".((int)($_SESSION['user']['id']??'NULL')).")"); }catch(Throwable $e){}
   echo json_encode(['success'=>true,'data'=>['siswa_cleared'=>$cSiswa,'pd_cleared'=>$cPd]], JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
-  http_response_code(500); echo json_encode(['success'=>false,'error'=>$e->getMessage()]);
+  error_log('clear siswa: '.$e->getMessage());
+  http_response_code(500); echo json_encode(['success'=>false,'error'=>'Gagal hapus, coba lagi']);
 }

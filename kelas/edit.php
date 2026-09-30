@@ -4,6 +4,8 @@ require __DIR__.'/../includes/csrf.php';
 if(session_status()===PHP_SESSION_NONE) session_start();
 require __DIR__.'/../includes/auth.php';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_kelas');
+if($_SERVER['REQUEST_METHOD']==='POST') require_can('mutate_kelas');
 $id=(int)($_GET['id']??0); if(!$id){ header('Location: index.php'); exit; }
 $row=null; try{ $st=$pdo->prepare("SELECT k.*, COALESCE(u.nama,'—') as wali FROM kelas k LEFT JOIN users u ON u.id=k.wali_kelas_id WHERE k.id=? AND k.deleted_at IS NULL LIMIT 1"); $st->execute([$id]); $row=$st->fetch(); }catch(Throwable $e){}
 if(!$row){ header('Location: index.php?err='.urlencode('Kelas tidak ditemukan')); exit; }

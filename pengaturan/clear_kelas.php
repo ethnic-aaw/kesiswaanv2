@@ -24,5 +24,6 @@ try{
   }
   echo json_encode(['success'=>true,'data'=>['kelas_cleared'=>$cleared,'kelas_skipped'=>$skipped]], JSON_UNESCAPED_UNICODE);
 }catch(Throwable $e){
-  http_response_code(500); echo json_encode(['success'=>false,'error'=>$e->getMessage()]);
+  error_log('clear kelas: '.$e->getMessage());
+  http_response_code(500); echo json_encode(['success'=>false,'error'=>'Gagal hapus, coba lagi']);
 }

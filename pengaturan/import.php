@@ -4,6 +4,7 @@ require __DIR__.'/../includes/csrf.php';
 if(session_status()===PHP_SESSION_NONE) session_start();
 require __DIR__.'/../includes/auth.php';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_pengaturan');
 require __DIR__.'/../includes/header.php';
 ?>
 <div class="max-w-5xl space-y-4">

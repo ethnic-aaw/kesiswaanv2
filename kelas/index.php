@@ -5,8 +5,10 @@ require __DIR__.'/../includes/csrf.php';
 if(session_status()===PHP_SESSION_NONE) session_start();
 require __DIR__.'/../includes/auth.php';
 if(empty($_SESSION['user'])){ header('Location: /kesiswaanv2/login.php'); exit; }
+require_can('view_kelas');
 $err='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
+  require_can('mutate_kelas');
   if(!csrf_verify($_POST['csrf_token']??'')){ http_response_code(403); exit('CSRF tidak valid'); }
   $aksi=$_POST['aksi']??'';
   if($aksi==='tambah'){
