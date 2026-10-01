@@ -46,6 +46,24 @@
     </div>
   </div>
 </div>
+<!-- Modal hasil import — tampil setelah Simpan, OK baru ke Master Siswa -->
+<div id="importResultModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+  <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" onclick="closeImportResultModal(false)"></div>
+  <div class="relative bg-white dark:bg-[#1E293B] rounded-[12px] shadow-xl max-w-lg w-full max-h-[80vh] flex flex-col overflow-hidden border border-[#E2E8F0] dark:border-[#334155]">
+    <div class="px-5 py-4 border-b border-[#E2E8F0] dark:border-[#334155] flex items-start justify-between gap-3">
+      <div>
+        <h3 id="importModalTitle" class="font-semibold text-sm">Hasil Import</h3>
+        <p id="importModalSub" class="text-xs text-[#475569] dark:text-[#94A3B8] mt-0.5"></p>
+      </div>
+      <button onclick="closeImportResultModal(false)" class="w-8 h-8 rounded-full hover:bg-[#F1F5F9] dark:hover:bg-white/10 flex items-center justify-center shrink-0 text-[#475569]">✕</button>
+    </div>
+    <div id="importModalBody" class="overflow-y-auto p-5 text-sm flex-1"></div>
+    <div class="px-5 py-3 border-t border-[#E2E8F0] dark:border-[#334155] flex justify-end gap-2 bg-[#F8FAFC] dark:bg-[#0F172A]/50">
+      <button onclick="closeImportResultModal(false)" class="h-9 px-4 rounded-input border border-[#CBD5E1] bg-white dark:bg-[#1E293B] text-sm font-medium">Tutup</button>
+      <button onclick="closeImportResultModal(true)" class="h-9 px-5 rounded-input bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-sm font-semibold">OK</button>
+    </div>
+  </div>
+</div>
 <script src="/kesiswaanv2/assets/js/api.js"></script>
 <script>
 const fileInput=document.getElementById('fileInput'), fileName=document.getElementById('fileName'), apiBadge=document.getElementById('apiBadge');
@@ -133,7 +151,7 @@ function renderPreview(d){
   document.getElementById('btnSave').style.display = (isPreview && ok>0) ? '' : 'none';
   tb.innerHTML='';
   const frag=document.createDocumentFragment();
-  (d.rincian||[]).forEach(r=>{
+  (d.rincian||[]).forEach((r,i)=>{
     const s=r.status;
     const isGagal=s==='gagal';
     const isAkanUpdate=s==='update' && isPreview;
@@ -147,11 +165,37 @@ function renderPreview(d){
     tr.className=isGagal?'bg-red-50/60':'hover:bg-[#F8FAFC]';
     tr.dataset.status=s;
     if(isGagal) tr.dataset.error=r.error||'';
-    tr.innerHTML='<td class="px-3 py-2">'+r.line+'</td><td class="px-3 py-2 '+(isOk?'':'text-red-600')+'">'+esc(r.nipd)+'</td><td class="px-3 py-2">'+esc(r.nama)+'</td><td class="px-3 py-2 '+(r.error&&r.error.includes('kelas')?'text-red-600':'')+'">'+esc(r.kelas)+'</td><td class="px-3 py-2">'+esc(r.jk)+'</td><td class="px-3 py-2"><span class="px-2 py-1 rounded-badge text-xs font-semibold '+cls+'">'+label+'</span></td>';
+    tr.innerHTML='<td class="px-3 py-2" title="Baris Excel '+r.line+'">'+(i+1)+'</td><td class="px-3 py-2 '+(isOk?'':'text-red-600')+'">'+esc(r.nipd)+'</td><td class="px-3 py-2">'+esc(r.nama)+'</td><td class="px-3 py-2 '+(r.error&&r.error.includes('kelas')?'text-red-600':'')+'">'+esc(r.kelas)+'</td><td class="px-3 py-2">'+esc(r.jk)+'</td><td class="px-3 py-2"><span class="px-2 py-1 rounded-badge text-xs font-semibold '+cls+'">'+label+'</span></td>';
     frag.appendChild(tr);
   });
   tb.appendChild(frag);
   document.getElementById('preview').classList.remove('hidden'); lucide.createIcons();
+}
+function showImportResultModal(d){
+  const gagal=d.gagal||0, ok=d.berhasil||0, upd=d.diperbarui||0;
+  const fails=(d.rincian||[]).filter(r=>r.status==='gagal');
+  document.getElementById('importModalTitle').textContent = gagal>0 ? 'Import selesai — ada yang gagal' : 'Import berhasil';
+  document.getElementById('importModalSub').textContent = ok+' tersimpan'+(upd?' ('+upd+' update)':'')+' · '+gagal+' gagal';
+  const body=document.getElementById('importModalBody');
+  if(gagal===0){
+    body.innerHTML='<div class="flex flex-col items-center text-center py-4"><div class="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-xl">✓</div><p class="mt-3 font-medium">Semua data berhasil disimpan</p><p class="text-xs text-[#475569] dark:text-[#94A3B8] mt-1">Tekan OK untuk ke Master Siswa.</p></div>';
+  } else {
+    let h='<div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-800 dark:text-amber-300 flex items-center gap-2"><span class="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center shrink-0">!</span> '+gagal+' siswa gagal diimport — periksa rincian di bawah.</div>';
+    h+='<div class="mt-3 flex items-center justify-between text-xs"><span class="font-semibold">Rincian gagal ('+fails.length+')</span><span class="text-[#475569]">'+ok+' ok'+(upd?' · '+upd+' update':'')+'</span></div>';
+    h+='<div class="mt-2 border rounded-lg overflow-hidden divide-y max-h-[32vh] overflow-y-auto">';
+    fails.forEach(r=>{
+      h+='<div class="px-3 py-2 flex items-start justify-between gap-3 text-xs"><div class="min-w-0"><div class="font-medium truncate">'+esc(r.nama||'(tanpa nama)')+' · '+esc(r.nipd||'-')+'</div><div class="text-[#475569] dark:text-[#94A3B8]">Baris '+r.line+' · Rombel: '+esc(r.kelas||'-')+' · JK: '+esc(r.jk||'-')+'</div></div><span class="shrink-0 px-2 py-1 rounded-full bg-[#FEE2E2] text-[#DC2626] font-semibold text-[11px]">'+esc(r.error||'Gagal')+'</span></div>';
+    });
+    h+='</div><p class="mt-3 text-xs text-[#475569] dark:text-[#94A3B8]">Data yang berhasil tetap tersimpan. Tekan <b>OK</b> untuk melihat Master Siswa, atau <b>Tutup</b> untuk tetap di sini.</p>';
+    body.innerHTML=h;
+  }
+  document.getElementById('importResultModal').classList.remove('hidden');
+  document.body.style.overflow='hidden';
+}
+function closeImportResultModal(goMaster){
+  document.getElementById('importResultModal').classList.add('hidden');
+  document.body.style.overflow='';
+  if(goMaster) location.href='/kesiswaanv2/siswa/index.php';
 }
 async function doSave(){
   if(!lastFile) return;
@@ -166,8 +210,7 @@ async function doSave(){
     await new Promise(r=>setTimeout(r,200));
     setProgress(100,'Selesai 100%');
     renderPreview(d);
-    toast((d.berhasil||0)+' tersimpan'+((d.diperbarui||0)?' ('+d.diperbarui+' update)':'')+' — '+(d.gagal||0)+' gagal');
-    if((d.berhasil||0)>0) setTimeout(()=>location.href='/kesiswaanv2/siswa/index.php',1200);
+    showImportResultModal(d);
   }catch(ex){ setProgress(0,'Gagal 0%'); toast(ex.message,'error'); const eb=document.getElementById('errBox'); eb.textContent=ex.message; eb.classList.remove('hidden'); }
   btn.disabled=false; btn.textContent='Simpan ke peserta_didik + siswa';
 }

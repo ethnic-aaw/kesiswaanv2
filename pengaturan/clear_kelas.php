@@ -16,8 +16,6 @@ try{
   $rows=$pdo->query("SELECT id FROM kelas WHERE deleted_at IS NULL")->fetchAll(PDO::FETCH_COLUMN);
   $cleared=0; $skipped=0;
   foreach($rows as $id){
-    $cnt=(int)$pdo->prepare("SELECT COUNT(*) FROM siswa WHERE kelas_id=? AND deleted_at IS NULL");
-    // prepare+execute for count
     $st=$pdo->prepare("SELECT COUNT(*) FROM siswa WHERE kelas_id=? AND deleted_at IS NULL"); $st->execute([$id]); $cnt=(int)$st->fetchColumn();
     if($cnt>0){ $skipped++; continue; }
     $pdo->prepare("UPDATE kelas SET deleted_at=NOW() WHERE id=?")->execute([$id]); $cleared++;

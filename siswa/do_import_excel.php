@@ -240,12 +240,15 @@ foreach($cleaned as $idx=>$rec){
   if($dryRun){
     $r['status']=$isExisting?'update':'ok'; $r['mode']=$isExisting?'upsert':'insert'; $results[]=$r; $ok++; continue;
   }
-  // build peserta_didik row (all 60 cols)
+  // max lengths sesuai sql/kesiswaan.sql — ponytail: ambil dari INFORMATION_SCHEMA bila nambah kolom
+  static $COL_MAX=null; if($COL_MAX===null) $COL_MAX=['no_urut'=>10,'nama'=>150,'nipd'=>25,'jenis_kelamin'=>10,'nisn'=>15,'tempat_lahir'=>100,'tanggal_lahir'=>20,'nik'=>25,'agama'=>30,'alamat'=>255,'rt'=>10,'rw'=>10,'dusun'=>100,'kelurahan'=>100,'kecamatan'=>100,'kode_pos'=>10,'jenis_tinggal'=>50,'alat_transportasi'=>100,'telepon'=>20,'hp'=>20,'email'=>100,'skhun'=>30,'penerima_kps'=>10,'no_kps'=>30,'ayah_nama'=>150,'ayah_tahun_lahir'=>10,'ayah_pendidikan'=>50,'ayah_pekerjaan'=>100,'ayah_penghasilan'=>50,'ayah_nik'=>25,'ibu_nama'=>150,'ibu_tahun_lahir'=>10,'ibu_pendidikan'=>50,'ibu_pekerjaan'=>100,'ibu_penghasilan'=>50,'ibu_nik'=>25,'wali_nama'=>150,'wali_tahun_lahir'=>10,'wali_pendidikan'=>50,'wali_pekerjaan'=>100,'wali_penghasilan'=>50,'wali_nik'=>25,'rombel'=>50,'no_peserta_ujian'=>30,'no_seri_ijazah'=>50,'penerima_kip'=>10,'nomor_kip'=>30,'nama_kip'=>150,'nomor_kks'=>30,'no_registrasi_akta_lahir'=>50,'bank'=>50,'no_rekening_bank'=>50,'rekening_atas_nama'=>150,'layak_pip'=>50,'alasan_layak_pip'=>100,'kebutuhan_khusus'=>100,'sekolah_asal'=>150,'anak_ke'=>10,'lintang'=>20,'bujur'=>20,'no_kk'=>25,'berat_badan'=>10,'tinggi_badan'=>10,'lingkar_kepala'=>10,'jml_saudara_kandung'=>10,'jarak_ke_sekolah_km'=>15];
+  // build peserta_didik row (all 60 cols) — truncate biar tidak 1406 Data too long
   $pdRow=[];
   foreach($dbCols as $col=>$idx2){
     $v=$rec[$idx2]??null; $v=$v===null?null:trim((string)$v); if($v==='') $v=null;
     if($col==='tanggal_lahir' && $v) $v=fixDate($v);
     if($col==='jenis_kelamin' && $v) $v=normJK($v);
+    if($v!==null && isset($COL_MAX[$col]) && mb_strlen($v)>$COL_MAX[$col]) $v=mb_substr($v,0,$COL_MAX[$col]);
     $pdRow[$col]=$v;
   }
   // ensure jenis_kelamin normalized
@@ -266,11 +269,23 @@ foreach($cleaned as $idx=>$rec){
       if($dupKey) $existingPd[$dupKey]=true;
     }
   }catch(Throwable $e){
-    // if unique violation and upsert off, mark fail
-    if(str_contains($e->getMessage(),'Duplicate') && !$upsert){ $r['status']='gagal'; $r['error']='Duplikat DB: '.substr($e->getMessage(),0,80); $results[]=$r; $fail++; continue; }
-    // else ignore and continue to siswa sync? peserta_didik is master, so count fail if insert fails
-    if(!$isExisting || !$upsert){ $r['status']='gagal'; $r['error']='DB peserta_didik: '.substr($e->getMessage(),0,120); $results[]=$r; $fail++; continue; }
+    $msg=$e->getMessage();
+    if(str_contains($msg,'22001')||str_contains($msg,'Data too long')){
+      // fallback: pecah kolom penyebab & potong dinamis dari pesan
+      if(preg_match("/for column '([^']+)'/",$msg,$m) && isset($COL_MAX[$m[1]])){
+        $c=$m[1]; $pdRow[$c]=mb_substr((string)($pdRow[$c]??''),0,$COL_MAX[$c]);
+        try{
+          if($isExisting && $upsert){ $where=$nisn?"nisn=?":"nipd=?"; $wv=$nisn?$nisn:$nipd; $sets=[];$vals=[]; foreach($pdRow as $k=>$v){$sets[]="`$k`=?";$vals[]=$v;} if($sets){$vals[]=$wv; $pdo->prepare("UPDATE peserta_didik SET ".implode(',',$sets)." WHERE $where LIMIT 1")->execute($vals);} $skippedUpdate++; }
+          else { $cols=array_keys($pdRow); $ph=array_fill(0,count($cols),'?'); $pdo->prepare("INSERT INTO peserta_didik(`".implode('`,`',$cols)."`) VALUES(".implode(',',$ph).")")->execute(array_values($pdRow)); if($dupKey) $existingPd[$dupKey]=true; }
+          goto _pd_ok;
+        }catch(Throwable $e2){ $msg=$e2->getMessage(); }
+      }
+      $r['status']='gagal'; $r['error']='Data kepanjangan: '.substr($msg,0,110); $results[]=$r; $fail++; continue;
+    }
+    if(str_contains($msg,'Duplicate') && !$upsert){ $r['status']='gagal'; $r['error']='Duplikat DB: '.substr($msg,0,80); $results[]=$r; $fail++; continue; }
+    if(!$isExisting || !$upsert){ $r['status']='gagal'; $r['error']='DB peserta_didik: '.substr($msg,0,120); $results[]=$r; $fail++; continue; }
   }
+  _pd_ok:
   // sync to siswa (for kesiswaan poin) — key by nipd (fallback nisn if nipd empty)
   $siswaNipd=$nipd?:$nisn;
   if($siswaNipd){
