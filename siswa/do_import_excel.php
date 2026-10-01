@@ -117,14 +117,18 @@ for($i=0;$i<min(12,count($rows));$i++){
   if(preg_match('/tahun\s*ajaran\s*[:\-]?\s*([0-9]{4}\s*\/\s*[0-9]{4}[^\\n]*)/i',$line,$m)) $dapodikMeta['tahun_ajaran']=trim($m[1]);
   if(preg_match('/tahun\s*[:\-]?\s*([0-9]{4}\s*\/\s*[0-9]{4})/i',$line,$m) && !$dapodikMeta['tahun_ajaran']) $dapodikMeta['tahun_ajaran']=trim($m[1]);
   if(preg_match('/tanggal\s*unduh\s*[:\-]?\s*([0-9]{4}-[0-9]{2}-[0-9]{2}[ 0-9:]*)/i',$line,$m)) $dapodikMeta['tanggal_unduh']=trim($m[1]);
-  if(preg_match('/pengunduh\s*[:\-]?\s*(.+?)(?:\s*\(([^)]+)\))?/i',$line,$m)){ $dapodikMeta['pengunduh']=trim($m[1]); if(!empty($m[2])) $dapodikMeta['email']=trim($m[2]); }
+  // ponytail: ambil sampai sebelum '(' email — jangan potong nama di huruf pertama
+  if(preg_match('/pengunduh\s*[:\-]?\s*([^\(]+?)(?:\s*\(([^)]+)\))?\s*$/i',$line,$m)){ $nm=trim(preg_replace('/\s{2,}/',' ',trim($m[1]))); if($nm!==''&&strlen($nm)>1) $dapodikMeta['pengunduh']=$nm; if(!empty($m[2])) $dapodikMeta['email']=trim($m[2]); }
 }
 // fallback: scan all rows for tgl/pengunduh pattern if not found above
-if(!$dapodikMeta['tanggal_unduh']||!$dapodikMeta['pengunduh']){
+if(!$dapodikMeta['tanggal_unduh']||!$dapodikMeta['pengunduh']||strlen($dapodikMeta['pengunduh']??'')<=2){
   for($i=0;$i<min(40,count($rows));$i++){
     $line=implode(' ',array_filter(array_map(fn($v)=>trim((string)($v??'')),$rows[$i])));
     if(!$dapodikMeta['tanggal_unduh'] && preg_match('/\b20\d{2}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\b/',$line,$m)) $dapodikMeta['tanggal_unduh']=$m[0];
-    if(!$dapodikMeta['pengunduh'] && preg_match('/\b([A-Z ]+)\s*\(([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})\)/i',$line,$m)){ $dapodikMeta['pengunduh']=trim($m[1]); $dapodikMeta['email']=trim($m[2]); }
+    // NAMA LENGKAP spasi + email dalam kurung — jangan cuma [A-Z ] satu huruf
+    if((!$dapodikMeta['pengunduh']||strlen($dapodikMeta['pengunduh'])<=2) && preg_match('/\b([A-Z][A-Z .\'\-]{2,60})\s*\(([a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,})\)/i',$line,$m)){ $nm=trim(preg_replace('/\s{2,}/',' ',trim($m[1]))); if(strlen($nm)>2){ $dapodikMeta['pengunduh']=$nm; $dapodikMeta['email']=trim($m[2]); } }
+    // tanpa email: baris mengandung "Pengunduh" full
+    if((!$dapodikMeta['pengunduh']||strlen($dapodikMeta['pengunduh'])<=2) && preg_match('/pengunduh\s*[:\-]?\s*([A-Z][A-Z .\'\-]{2,60})\s*$/i',$line,$m)){ $nm=trim($m[1]); if(strlen($nm)>2) $dapodikMeta['pengunduh']=$nm; }
   }
 }
 if($dapodikMeta['sekolah']||$dapodikMeta['tanggal_unduh']){

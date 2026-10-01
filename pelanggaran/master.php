@@ -49,14 +49,29 @@ $kat = $_GET['kategori'] ?? '';
 $q = trim($_GET['q'] ?? '');
 $msg = $_GET['msg'] ?? '';
 $err = $_GET['err'] ?? '';
+$sort = trim($_GET['sort'] ?? 'kode'); $allowedSort=['kode','nama','kategori','bobot','konsekuensi']; if(!in_array($sort,$allowedSort,true)) $sort='kode';
+$dirRaw = strtolower(trim($_GET['dir'] ?? 'asc')); $dir = $dirRaw==='desc' ? 'DESC' : 'ASC';
+$orderMap=['kode'=>'kode','nama'=>'nama','kategori'=>'kategori','bobot'=>'bobot_poin','konsekuensi'=>'konsekuensi'];
+$orderCol=$orderMap[$sort]??'kode';
+$orderBy="$orderCol $dir".($sort!=='kode' ? ", kode ASC" : "");
 
 require __DIR__.'/../includes/header.php';
 
 $where="WHERE deleted_at IS NULL"; $args=[];
 if($kat!==''){ $where.=" AND kategori=?"; $args[]=$kat; }
 if($q!==''){ $where.=" AND (kode LIKE ? OR nama LIKE ? OR deskripsi LIKE ?)"; $args[]="%$q%"; $args[]="%$q%"; $args[]="%$q%"; }
-$stmt=$pdo->prepare("SELECT id,kode,nama,kategori,bobot_poin,deskripsi,konsekuensi FROM jenis_pelanggaran $where ORDER BY kode");
+$stmt=$pdo->prepare("SELECT id,kode,nama,kategori,bobot_poin,deskripsi,konsekuensi FROM jenis_pelanggaran $where ORDER BY $orderBy");
 $stmt->execute($args); $rows=$stmt->fetchAll();
+$baseQs=array_filter(['q'=>$q,'kategori'=>$kat]);
+function sort_link_pel($baseQs,$col,$label,$curSort,$curDir){
+  $isCur=$curSort===$col;
+  $nextDir=$isCur && strtoupper($curDir)==='ASC' ? 'desc' : 'asc';
+  $qs=array_merge($baseQs,['sort'=>$col,'dir'=>$nextDir]);
+  $href='master.php?'.http_build_query($qs);
+  $arrow=$isCur ? (strtoupper($curDir)==='ASC' ? '▲' : '▼') : '↕';
+  $cls=$isCur ? 'text-[#2563EB] dark:text-[#93C5FD]' : '';
+  return '<a href="'.htmlspecialchars($href).'" class="inline-flex items-center gap-1 hover:text-[#2563EB] '.$cls.'">'.htmlspecialchars($label).' <span class="text-[10px]">'.$arrow.'</span></a>';
+}
 $total=count($rows);
 $cntAll=(int)$pdo->query("SELECT COUNT(*) FROM jenis_pelanggaran WHERE deleted_at IS NULL")->fetchColumn();
 function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#2563EB]','Tata Krama'=>'bg-violet-50 text-violet-700','Kekerasan'=>'bg-[#FEE2E2] text-[#DC2626]','Narkoba'=>'bg-red-100 text-red-800','Lainnya'=>'bg-slate-100 text-slate-700', default=>'bg-slate-100 text-slate-600'}; }
@@ -92,7 +107,7 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
 
 <div class="hidden md:block bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card overflow-hidden mt-4">
 <table class="w-full text-sm">
-<thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase text-[#475569] dark:text-[#94A3B8]"><tr><th class="px-3 py-3 text-left">Kode</th><th class="px-3 py-3 text-left">Nama</th><th class="px-3 py-3 text-left">Kategori</th><th class="px-3 py-3 text-left">Bobot</th><th class="px-3 py-3 text-left">Konsekuensi</th><th class="px-3 py-3 text-left">Aksi</th></tr></thead>
+<thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase text-[#475569] dark:text-[#94A3B8]"><tr><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'kode','Kode',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'nama','Nama',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'kategori','Kategori',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'bobot','Bobot',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'konsekuensi','Konsekuensi',$sort,$dir)?></th><th class="px-3 py-3 text-left">Aksi</th></tr></thead>
 <tbody class="divide-y divide-[#E2E8F0] dark:divide-[#334155]">
 <?php foreach($rows as $r): ?>
 <tr class="hover:bg-[#F8FAFC] dark:hover:bg-white/[0.03]">

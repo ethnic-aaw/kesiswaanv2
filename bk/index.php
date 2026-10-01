@@ -110,12 +110,16 @@ $qsBase=array_filter(['q'=>$q,'kelas'=>$kelas,'size'=>$size,'siswa_id'=>$filterS
     <?=csrf_field()?><input type="hidden" name="aksi" value="tambah">
     <h3 class="font-semibold">Tambah Bimbingan Konseling</h3>
     <label class="block"><span class="text-[13px] font-medium">Siswa <span class="text-red-500">*</span></span>
-      <select id="bk_siswa_sel" name="siswa_id" required class="mt-1 w-full h-9 rounded-input border bg-white dark:bg-[#0F172A] text-sm">
-        <option value="">Pilih siswa…</option>
-        <?php if($filterSiswa>0 && $filterNama!==''): ?><option value="<?=$filterSiswa?>" selected><?=htmlspecialchars($filterNama)?> — <?=htmlspecialchars($filterNipd)?> (terpilih)</option><?php endif; ?>
-        <?php try{ foreach($pdo->query("SELECT id,nama,nipd FROM siswa WHERE deleted_at IS NULL AND status='Aktif' ORDER BY nama LIMIT 300") as $s): if((int)$s['id']===$filterSiswa) continue; ?><option value="<?=$s['id']?>"><?=htmlspecialchars($s['nama'])?> — <?=$s['nipd']?></option><?php endforeach; }catch(Throwable $e){} ?>
-      </select>
-      <button type="button" onclick="document.getElementById('mCariBk').classList.remove('hidden')" class="mt-1 text-xs text-[#2563EB] hover:underline">Cari siswa →</button>
+      <div class="relative">
+        <input type="hidden" name="siswa_id" id="bk_siswa_id" required value="<?=$filterSiswa?>">
+        <div class="relative mt-1">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#94A3B8] pointer-events-none"></i>
+          <input id="bk_siswa_q" type="text" placeholder="Ketik nama / NIPD (min 2 huruf)..." autocomplete="off" value="<?= $filterSiswa ? htmlspecialchars($filterNama.' — '.$filterNipd) : '' ?>" class="w-full h-9 pl-9 pr-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm placeholder:text-[#94A3B8]">
+        </div>
+        <div id="bk_siswa_list" class="hidden absolute z-10 mt-1 w-full bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-lg max-h-60 overflow-y-auto divide-y"></div>
+        <div id="bk_siswa_picked" class="<?= $filterSiswa ? '' : 'hidden' ?> text-xs mt-1.5 font-medium text-emerald-600 flex items-center gap-1"><i data-lucide="check-circle" class="w-3.5 h-3.5"></i><span id="bk_siswa_picked_text"><?= $filterNama ? htmlspecialchars($filterNama).' — '.htmlspecialchars($filterNipd) : '' ?></span><button type="button" id="bk_siswa_clear" class="ml-2 text-[11px] text-[#94A3B8] hover:text-[#DC2626] underline">hapus</button></div>
+        <p class="text-[11px] text-[#94A3B8] mt-1">Hanya menampilkan hasil pencarian. Format: <b>Nama — NIPD · Kelas</b></p>
+      </div>
     </label>
     <label class="block"><span class="text-[13px] font-medium">Tanggal <span class="text-red-500">*</span></span><input type="date" name="tanggal" required value="<?=date('Y-m-d')?>" class="mt-1 w-full h-9 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm"></label>
     <label class="block"><span class="text-[13px] font-medium">Permasalahan <span class="text-red-500">*</span></span><textarea name="permasalahan" required rows="3" placeholder="Deskripsi permasalahan siswa" class="mt-1 w-full px-3 py-2 rounded-input border bg-white dark:bg-[#0F172A] text-sm"></textarea></label>
@@ -138,8 +142,57 @@ $qsBase=array_filter(['q'=>$q,'kelas'=>$kelas,'size'=>$size,'siswa_id'=>$filterS
 <?php if($filterSiswa>0): ?><script>document.addEventListener('DOMContentLoaded',()=>{ const m=document.getElementById('mBk'); if(m) m.classList.remove('hidden'); });</script><?php endif; ?>
 <script>
 function openEditBk(r){ document.getElementById('bk_e_id').value=r.id; document.getElementById('bk_e_tgl').value=r.tanggal; document.getElementById('bk_e_prob').value=r.permasalahan; document.getElementById('bk_e_tind').value=r.tindakan||''; document.getElementById('mEditBk').classList.remove('hidden'); }
+// BK: ketik-cari siswa inline (hanya hasil pencarian + kelas) — ponytail: upgrade ke combobox jika perlu multi-select
+(function(){
+  const q=document.getElementById('bk_siswa_q'), list=document.getElementById('bk_siswa_list'), hid=document.getElementById('bk_siswa_id'), picked=document.getElementById('bk_siswa_picked'), pickedText=document.getElementById('bk_siswa_picked_text'), clearBtn=document.getElementById('bk_siswa_clear');
+  if(!q||!list||!hid) return;
+  let tmr=null, lastQ='';
+  function showList(html){ list.innerHTML=html; list.classList.remove('hidden'); }
+  function hideList(){ list.classList.add('hidden'); }
+  function setPicked(id,nama,nipd,kelas){
+    hid.value=id;
+    q.value=nama + ' — ' + nipd + ' · ' + kelas;
+    if(picked&&pickedText){ pickedText.textContent=nama+' — '+nipd+' · '+kelas; picked.classList.remove('hidden'); }
+    hideList();
+    try{ lucide.createIcons(); }catch(e){}
+  }
+  q.addEventListener('input', ()=>{
+    const v=q.value.trim();
+    // jika user edit setelah pick, reset hidden sampai pilih lagi
+    if(hid.value && v !== (pickedText?.textContent||'')) { hid.value=''; if(picked) picked.classList.add('hidden'); }
+    clearTimeout(tmr);
+    if(v.length<2){ hideList(); return; }
+    if(v===lastQ) return;
+    lastQ=v;
+    tmr=setTimeout(async()=>{
+      showList('<div class="p-3 text-xs text-[#94A3B8]">Mencari...</div>');
+      try{
+        const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(v));
+        const j=await r.json();
+        const rows=j.rows||[];
+        if(!rows.length){ showList('<div class="p-3 text-xs text-[#94A3B8]">Tidak ada — coba kata kunci lain</div>'); return; }
+        showList(rows.map(x=>`<button type="button" data-id="${x.id}" data-nama="${String(x.nama).replace(/"/g,'&quot;')}" data-nipd="${x.nipd}" data-kelas="${String(x.kelas).replace(/"/g,'&quot;')}" class="w-full text-left px-3 py-2.5 hover:bg-[#F1F5F9] dark:hover:bg-white/5 flex justify-between gap-3"><span class="font-medium text-sm truncate">${x.nama}</span><span class="text-xs text-[#475569] dark:text-[#94A3B8] shrink-0">${x.nipd} · ${x.kelas}</span></button>`).join(''));
+        list.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', ()=> setPicked(b.dataset.id,b.dataset.nama,b.dataset.nipd,b.dataset.kelas)));
+      }catch(e){ showList('<div class="p-3 text-xs text-red-500">Gagal cari</div>'); }
+    },280);
+  });
+  q.addEventListener('focus', ()=>{ if(q.value.trim().length>=2 && list.innerHTML) list.classList.remove('hidden'); });
+  document.addEventListener('click', (e)=>{ if(!list.contains(e.target) && e.target!==q) hideList(); });
+  q.addEventListener('keydown', (e)=>{ if(e.key==='Escape') hideList(); });
+  clearBtn?.addEventListener('click', ()=>{ hid.value=''; q.value=''; if(picked) picked.classList.add('hidden'); hideList(); q.focus(); });
+  // validasi submit: wajib pilih dari pencarian
+  const form=q.closest('form');
+  form?.addEventListener('submit', (e)=>{
+    if(!hid.value){
+      e.preventDefault();
+      q.focus();
+      showList('<div class="p-3 text-xs text-[#DC2626]">Pilih siswa dari hasil pencarian dulu</div>');
+    }
+  });
+})();
+// fallback modal Cari Siswa lama (tetap hidup jika dibuka)
 const qBk=document.getElementById('qSiswaBk'), listBk=document.getElementById('listSiswaBk');
 let tmrBk=null;
-if(qBk) qBk.addEventListener('input', ()=>{ clearTimeout(tmrBk); const q=qBk.value.trim(); if(q.length<2){ listBk.innerHTML='<div class="p-3 text-xs text-[#94A3B8]">Ketik min 2 huruf</div>'; return; } tmrBk=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); listBk.innerHTML=(j.rows||[]).map(x=>`<button type="button" data-id="${x.id}" data-nama="${x.nama}" class="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-sm flex justify-between"><span>${x.nama}</span><span class="text-xs text-[#94A3B8]">${x.nipd} · ${x.kelas}</span></button>`).join('')||'<div class="p-3 text-xs">Tidak ada</div>'; listBk.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', ()=>{ const sel=document.querySelector('#mBk select[name=siswa_id]'); const id=b.dataset.id; if(sel && ![...sel.options].some(o=>o.value===id)){ const o=document.createElement('option'); o.value=id; o.textContent=b.dataset.nama+' (dari pencarian)'; o.selected=true; sel.appendChild(o); } else if(sel) sel.value=id; document.getElementById('mCariBk').classList.add('hidden'); })); }catch(e){ listBk.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
+if(qBk) qBk.addEventListener('input', ()=>{ clearTimeout(tmrBk); const q=qBk.value.trim(); if(q.length<2){ listBk.innerHTML='<div class="p-3 text-xs text-[#94A3B8]">Ketik min 2 huruf</div>'; return; } tmrBk=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); listBk.innerHTML=(j.rows||[]).map(x=>`<button type="button" data-id="${x.id}" data-nama="${x.nama}" data-nipd="${x.nipd}" data-kelas="${x.kelas}" class="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-sm flex justify-between"><span>${x.nama}</span><span class="text-xs text-[#94A3B8]">${x.nipd} · ${x.kelas}</span></button>`).join('')||'<div class="p-3 text-xs">Tidak ada</div>'; listBk.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', ()=>{ const hid=document.getElementById('bk_siswa_id'), qq=document.getElementById('bk_siswa_q'), picked=document.getElementById('bk_siswa_picked'), pickedText=document.getElementById('bk_siswa_picked_text'); if(hid&&qq){ hid.value=b.dataset.id; qq.value=b.dataset.nama+' — '+b.dataset.nipd+' · '+b.dataset.kelas; if(picked&&pickedText){ pickedText.textContent=b.dataset.nama+' — '+b.dataset.nipd+' · '+b.dataset.kelas; picked.classList.remove('hidden'); } } document.getElementById('mCariBk').classList.add('hidden'); })); }catch(e){ listBk.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
 </script>
 <?php require __DIR__.'/../includes/footer.php'; ?>

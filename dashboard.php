@@ -6,7 +6,7 @@ require __DIR__.'/includes/header.php';
 $ta = $ta_aktif ?? get_ta_aktif($pdo);
 $npsn='69944965'; $ta='2024/2025 Semester Gasal';
 $metaSekolah='SMKN 1 LEUWIMUNDING'; $tglUnduh=null; $pengunduh=null; $emailPengunduh=null;
-try{ $dm=$pdo->query("SELECT sekolah,npsn,tahun_ajaran,tanggal_unduh,pengunduh,email_pengunduh FROM dapodik_meta WHERE id=1 LIMIT 1")->fetch(); if($dm){ if(!empty($dm['sekolah'])) $metaSekolah=$dm['sekolah']; if(!empty($dm['npsn'])) $npsn=$dm['npsn']; if(!empty($dm['tahun_ajaran'])) $ta=$dm['tahun_ajaran']; $tglUnduh=$dm['tanggal_unduh']??null; $pengunduh=$dm['pengunduh']??null; $emailPengunduh=$dm['email_pengunduh']??null; } }catch(Throwable $e){}
+try{ $dm=$pdo->query("SELECT sekolah,npsn,tahun_ajaran,tanggal_unduh,pengunduh,email_pengunduh FROM dapodik_meta ORDER BY id DESC LIMIT 1")->fetch(); if($dm){ if(!empty($dm['sekolah'])) $metaSekolah=$dm['sekolah']; if(!empty($dm['npsn'])) $npsn=$dm['npsn']; if(!empty($dm['tahun_ajaran'])) $ta=$dm['tahun_ajaran']; $tglUnduh=$dm['tanggal_unduh']??null; $pengunduh=$dm['pengunduh']??null; $emailPengunduh=$dm['email_pengunduh']??null; if($pengunduh!==null && strlen(trim($pengunduh))<=2){ $pengunduh=null; $emailPengunduh=null; } } }catch(Throwable $e){}
 $u=$_SESSION['user']??['nama'=>'Admin'];
 $hariMap=['Sunday'=>'Minggu','Monday'=>'Senin','Tuesday'=>'Selasa','Wednesday'=>'Rabu','Thursday'=>'Kamis','Friday'=>'Jumat','Saturday'=>'Sabtu'];
 $bulanMap=[1=>'Januari',2=>'Februari',3=>'Maret',4=>'April',5=>'Mei',6=>'Juni',7=>'Juli',8=>'Agustus',9=>'September',10=>'Oktober',11=>'November',12=>'Desember'];
@@ -103,7 +103,7 @@ function badgeClass($b){
         <span class="inline-flex bg-[#F1F5F9] dark:bg-white/5 text-[#475569] dark:text-[#CBD5E1] border border-[#E2E8F0] dark:border-white/10 rounded-full px-2.5 py-1 text-[11px] font-medium">NPSN: <?=htmlspecialchars($npsn)?></span>
         <span class="inline-flex bg-[#F1F5F9] dark:bg-white/5 text-[#475569] dark:text-[#CBD5E1] border border-[#E2E8F0] dark:border-white/10 rounded-full px-2.5 py-1 text-[11px] font-medium"><?=htmlspecialchars($ta)?></span>
         <?php if($tglUnduh): ?><span class="inline-flex bg-[#F1F5F9] dark:bg-white/5 text-[#475569] dark:text-[#CBD5E1] border border-[#E2E8F0] dark:border-white/10 rounded-full px-2.5 py-1 text-[11px] font-medium">Tanggal Unduh: <?=htmlspecialchars($tglUnduh)?></span><?php endif; ?>
-        <?php if($pengunduh): ?><span class="inline-flex bg-[#EFF6FF] dark:bg-white/10 text-[#2563EB] dark:text-[#93C5FD] border border-[#DBEAFE] dark:border-white/10 rounded-full px-2.5 py-1 text-[11px] font-medium">Pengunduh: <?=htmlspecialchars($pengunduh)?><?= $emailPengunduh ? ' ('.htmlspecialchars($emailPengunduh).')' : '' ?></span><?php endif; ?>
+        <?php if($pengunduh): ?><span class="inline-flex bg-[#EFF6FF] dark:bg-white/10 text-[#2563EB] dark:text-[#93C5FD] border border-[#DBEAFE] dark:border-white/10 rounded-full px-2.5 py-1 text-[11px] font-medium" title="<?=htmlspecialchars($pengunduh.($emailPengunduh ? ' <'.$emailPengunduh.'>' : ''))?>">Pengunduh: <?=htmlspecialchars($pengunduh)?><?= $emailPengunduh ? ' ('.htmlspecialchars($emailPengunduh).')' : '' ?></span><?php endif; ?>
       </div>
       <div class="mt-2.5 text-[13px] leading-5 text-[#475569] dark:text-[#94A3B8]">Selamat datang kembali, <b class="font-semibold text-[#0F172A] dark:text-white"><?=htmlspecialchars($u['nama'])?></b> · <?=$tglHari?></div>
     </div>
