@@ -51,6 +51,9 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
             <?php try{ $waliFilter=''; if((current_user()['role']??'')==='Wali Kelas'){ $ids=wali_ampu_ids($pdo,(int)($_SESSION['user']['id']??0)); $waliFilter = empty($ids)? " AND 1=0" : " AND s.kelas_id IN (".implode(',',array_map('intval',$ids)).")"; } $sl=$pdo->query("SELECT s.id,s.nama,s.nipd,COALESCE(k.nama_kelas,'—') kelas FROM siswa s LEFT JOIN kelas k ON k.id=s.kelas_id WHERE s.deleted_at IS NULL AND s.status='Aktif' $waliFilter ORDER BY s.nama LIMIT 200")->fetchAll(); foreach($sl as $s): ?><option value="<?=$s['id']?>"><?=htmlspecialchars($s['nama'])?> — <?=$s['nipd']?> — <?=htmlspecialchars($s['kelas'])?></option><?php endforeach; }catch(Throwable $e){} ?>
           </select>
           <button type="button" onclick="document.getElementById('mCari').classList.remove('hidden');document.getElementById('qSiswa').focus()" class="h-9 px-3 rounded-input border text-xs font-medium shrink-0">Cari</button>
+          <?php if((current_user()['role']??'')==='Admin'): ?>
+          <button type="button" id="btnScan" title="Scan barcode siswa" class="h-9 px-3 rounded-input border text-xs font-medium shrink-0 inline-flex items-center gap-1"><i data-lucide="scan-line" class="w-3.5 h-3.5"></i> Scan</button>
+          <?php endif; // ponytail: tombol Scan khusus Admin — upgrade path: buka utk Guru BK/Wali Kelas via role_can() ?>
         </div>
         <div id="siswaPicked" class="text-xs font-medium text-emerald-600 mt-1 hidden break-words"></div>
       </div>
@@ -81,12 +84,55 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
     </div>
   </form>
   <div id="mCari" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="document.getElementById('mCari').classList.add('hidden')"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-3">Cari Siswa</h3><input id="qSiswa" type="text" placeholder="Ketik nama/NIPD min 2 huruf..." class="w-full h-10 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm mb-3"><div id="listSiswa" class="max-h-60 overflow-y-auto divide-y"></div><button onclick="document.getElementById('mCari').classList.add('hidden')" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
+
+<!-- Scan barcode siswa (isi QR: NPSN | NISN | nama lengkap) -->
+<div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><input id="scanInput" autocomplete="off" placeholder="Atau ketik/scan barcode lalu Enter" class="w-full h-9 mt-3 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm"><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 </div>
 <script>
 const jpSel=document.getElementById('jp_id'), poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
 if(jpSel) jpSel.addEventListener('change', ()=>{ const o=jpSel.options[jpSel.selectedIndex]; const b=o?.dataset?.bobot; if(b){ poinIn.value=b; info.textContent='(bobot '+b+', boleh override)'; } });
 const qEl=document.getElementById('qSiswa'), listEl=document.getElementById('listSiswa'), sisSel=document.getElementById('siswa_id');
+function pickSiswa(x){ // {id,nama,nipd,kelas} — dipakai hasil pencarian & hasil scan
+  if(![...sisSel.options].some(o=>o.value===x.id)){ const o=document.createElement('option'); o.value=x.id; o.textContent=x.nama+' — '+x.nipd+' — '+(x.kelas||'—')+' (dari pencarian)'; o.selected=true; sisSel.appendChild(o); } else sisSel.value=x.id;
+  const picked=document.getElementById('siswaPicked');
+  if(picked){ picked.textContent='✓ '+x.nama+' — '+x.nipd+' · '+(x.kelas||'—'); picked.classList.remove('hidden'); }
+  sisSel.dispatchEvent(new Event('change'));
+  document.getElementById('mCari').classList.add('hidden');
+}
+function renderRows(rows){
+  listEl.innerHTML=(rows||[]).map(x=>`<button type="button" data-x='${JSON.stringify(x)}' class="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-sm flex justify-between"><span>${x.nama}</span><span class="text-xs text-muted">${x.nipd} · ${x.kelas}</span></button>`).join('')||'<div class="p-3 text-xs">Tidak ada</div>';
+  listEl.querySelectorAll('button[data-x]').forEach(b=> b.addEventListener('click', ()=> pickSiswa(JSON.parse(b.dataset.x))));
+}
 let tmr=null;
-if(qEl) qEl.addEventListener('input', ()=>{ clearTimeout(tmr); const q=qEl.value.trim(); if(q.length<2){ listEl.innerHTML='<div class="p-3 text-xs text-muted">Ketik min 2 huruf</div>'; return; } tmr=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); listEl.innerHTML=(j.rows||[]).map(x=>`<button type="button" data-id="${x.id}" data-nama="${x.nama}" data-nipd="${x.nipd}" data-kelas="${x.kelas}" class="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-white/5 text-sm flex justify-between"><span>${x.nama}</span><span class="text-xs text-muted">${x.nipd} · ${x.kelas}</span></button>`).join('')||'<div class="p-3 text-xs">Tidak ada</div>'; listEl.querySelectorAll('button[data-id]').forEach(b=> b.addEventListener('click', ()=>{ const id=b.dataset.id, nm=b.dataset.nama, nip=b.dataset.nipd, kls=b.dataset.kelas||'—'; if(![...sisSel.options].some(o=>o.value===id)){ const o=document.createElement('option'); o.value=id; o.textContent=nm+' — '+nip+' — '+kls+' (dari pencarian)'; o.selected=true; sisSel.appendChild(o); } else sisSel.value=id; const picked=document.getElementById('siswaPicked'); if(picked){ picked.textContent='✓ '+nm+' — '+nip+' · '+kls; picked.classList.remove('hidden'); } sisSel.dispatchEvent(new Event('change')); document.getElementById('mCari').classList.add('hidden'); })); }catch(e){ listEl.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
+if(qEl) qEl.addEventListener('input', ()=>{ clearTimeout(tmr); const q=qEl.value.trim(); if(q.length<2){ listEl.innerHTML='<div class="p-3 text-xs text-muted">Ketik min 2 huruf</div>'; return; } tmr=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); renderRows(j.rows); }catch(e){ listEl.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
+
+// --- Scan barcode (isi QR: NPSN | NISN | nama lengkap) ---
+async function lookupScan(raw){
+  const text=(raw||'').trim(); if(!text) return;
+  // kandidat: teks penuh → deret digit (NPSN/NISN) → token (nama), stop di hasil pertama yg match
+  const cands=[...new Set([text, ...(text.match(/\d{5,}/g)||[]), ...text.split(/[^A-Za-z0-9]+/).filter(t=>t.length>=3)])];
+  for(const q of cands){
+    try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); const rows=j.rows||[];
+      if(rows.length){ await closeScan(); if(rows.length===1) pickSiswa(rows[0]); else { document.getElementById('mCari').classList.remove('hidden'); renderRows(rows); } return; }
+    }catch(e){}
+  }
+  await closeScan(); toast('Barcode tidak cocok dengan siswa manapun','error');
+}
+let cam=null;
+const camMsg=t=>{ const el=document.getElementById('scanCam'); el.textContent=t; el.classList.add('text-red-500'); };
+async function openScan(){ document.getElementById('mScan').classList.remove('hidden'); const si=document.getElementById('scanInput'); si.value=''; si.focus();
+  const camEl=document.getElementById('scanCam'); camEl.classList.remove('text-red-500'); camEl.textContent='Arahkan kamera ke barcode…';
+  // kamera butuh secure context (HTTPS / localhost) — HTTP via IP LAN ditolak browser
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa. Ketik/scan manual di kolom bawah (scanner hardware jalan).'); return; }
+  try{ if(!window.Html5Qrcode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
+  }catch(e){ camMsg('Gagal load library scan (cek koneksi internet). Atau ketik manual di kolom bawah.'); return; }
+  try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ lookupScan(txt); }); }
+  catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)+'. Ketik manual di kolom bawah.'); }
+}
+async function closeScan(){ document.getElementById('mScan').classList.add('hidden'); if(cam){ try{ await cam.stop(); cam.clear(); }catch(e){} cam=null; document.getElementById('qr-reader').innerHTML=''; } }
+const scanIn=document.getElementById('scanInput');
+if(scanIn) scanIn.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); lookupScan(scanIn.value); } });
+const btnScan=document.getElementById('btnScan');
+if(btnScan) btnScan.addEventListener('click', openScan);
 </script>
 <?php require __DIR__.'/../includes/footer.php'; ?>
