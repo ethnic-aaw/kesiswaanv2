@@ -6,3 +6,5 @@ RUN apt-get update \
 # ponytail: tanpa gd — phpspreadsheet xlsx jalan tanpa gd; add libpng/libjpeg-dev + ext gd bila perlu cetak gambar
 # URL tetap /kesiswaanv2/... spt Laragon (docroot /var/www/html)
 COPY . /var/www/html/kesiswaanv2
+# root "/" redirect ke app — app pakai path absolut /kesiswaanv2/...
+RUN printf '<?php header("Location: /kesiswaanv2/"); exit;\n' > /var/www/html/index.php
