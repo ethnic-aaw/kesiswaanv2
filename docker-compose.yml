@@ -1,0 +1,30 @@
+services:
+  web:
+    build: .
+    ports: ["8080:80"]
+    environment:
+      DB_HOST: db
+      DB_NAME: kesiswaan
+      DB_USER: kesiswaan
+      DB_PASS: kesiswaan
+    volumes:
+      - .:/var/www/html/kesiswaanv2   # dev: live code — hapus baris ini utk prod (pakai COPY di Dockerfile)
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: kesiswaan
+      MYSQL_USER: kesiswaan
+      MYSQL_PASSWORD: kesiswaan
+      MYSQL_ROOT_PASSWORD: root
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+volumes:
+  dbdata: {}
