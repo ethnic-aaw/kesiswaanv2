@@ -86,7 +86,7 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
   <div id="mCari" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="document.getElementById('mCari').classList.add('hidden')"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-3">Cari Siswa</h3><input id="qSiswa" type="text" placeholder="Ketik nama/NIPD min 2 huruf..." class="w-full h-10 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm mb-3"><div id="listSiswa" class="max-h-60 overflow-y-auto divide-y"></div><button onclick="document.getElementById('mCari').classList.add('hidden')" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 
 <!-- Scan barcode siswa (isi QR: NPSN | NISN | nama lengkap) -->
-<div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><input id="scanInput" autocomplete="off" placeholder="Atau ketik/scan barcode lalu Enter" class="w-full h-9 mt-3 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm"><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
+<div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 </div>
 <script>
 const jpSel=document.getElementById('jp_id'), poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
@@ -120,18 +120,16 @@ async function lookupScan(raw){
 }
 let cam=null;
 const camMsg=t=>{ const el=document.getElementById('scanCam'); el.textContent=t; el.classList.add('text-red-500'); };
-async function openScan(){ document.getElementById('mScan').classList.remove('hidden'); const si=document.getElementById('scanInput'); si.value=''; si.focus();
+async function openScan(){ document.getElementById('mScan').classList.remove('hidden');
   const camEl=document.getElementById('scanCam'); camEl.classList.remove('text-red-500'); camEl.textContent='Arahkan kamera ke barcode…';
   // kamera butuh secure context (HTTPS / localhost) — HTTP via IP LAN ditolak browser
-  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa. Ketik/scan manual di kolom bawah (scanner hardware jalan).'); return; }
+  if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa.'); return; }
   try{ if(!window.Html5Qrcode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
-  }catch(e){ camMsg('Gagal load library scan (cek koneksi internet). Atau ketik manual di kolom bawah.'); return; }
+  }catch(e){ camMsg('Gagal load library scan (cek koneksi internet).'); return; }
   try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ lookupScan(txt); }); }
-  catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)+'. Ketik manual di kolom bawah.'); }
+  catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)); }
 }
 async function closeScan(){ document.getElementById('mScan').classList.add('hidden'); if(cam){ try{ await cam.stop(); cam.clear(); }catch(e){} cam=null; document.getElementById('qr-reader').innerHTML=''; } }
-const scanIn=document.getElementById('scanInput');
-if(scanIn) scanIn.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); lookupScan(scanIn.value); } });
 const btnScan=document.getElementById('btnScan');
 if(btnScan) btnScan.addEventListener('click', openScan);
 </script>
