@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS users (
   role ENUM('Admin','Guru BK','Wali Kelas','Siswa') NOT NULL DEFAULT 'Admin',
   nip VARCHAR(50) NULL,
   status ENUM('Aktif','Nonaktif') NOT NULL DEFAULT 'Aktif',
+  last_seen DATETIME NULL,
   deleted_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,

@@ -13,6 +13,11 @@ if(!empty($_SESSION['user'])){
     header('Location: /kesiswaanv2/login.php?error='.urlencode('Sesi berakhir karena idle 30 menit — silakan login lagi')); exit;
   }
   $_SESSION['last_activity']=time();
+  // heartbeat last_seen → indikator Online/Offline di Master User
+  if(!isset($GLOBALS['pdo'])){ try{ require_once __DIR__.'/../config/db.php'; }catch(Throwable $e){} }
+  if(isset($GLOBALS['pdo']) && $GLOBALS['pdo'] && !empty($_SESSION['user']['id'])){
+    try{ $GLOBALS['pdo']->prepare("UPDATE users SET last_seen=NOW() WHERE id=?")->execute([(int)$_SESSION['user']['id']]); }catch(Throwable $e){}
+  }
 }
 
 function current_user(){

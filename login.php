@@ -42,6 +42,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       _rate_reset($username);
       session_regenerate_id(true);
       $_SESSION['user']=['id'=>$user['id'],'nama'=>$user['nama'],'username'=>$user['username'],'role'=>$user['role'],'avatar'=>strtoupper(substr($user['nama'],0,1))];
+      $_SESSION['last_activity']=time();
+      try{ $pdo->prepare("UPDATE users SET last_seen=NOW() WHERE id=?")->execute([$user['id']]); }catch(Throwable $e){}
       header('Location: dashboard.php'); exit;
     }
     if($ok && !$user) $error='Username atau password salah.';

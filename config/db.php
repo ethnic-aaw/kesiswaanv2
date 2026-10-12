@@ -36,6 +36,7 @@ if($pdo){
   // opsional: pastikan kolom lain yang mungkin belum ada
   try{ $pdo->exec("ALTER TABLE `siswa` ADD COLUMN foto VARCHAR(255) NULL"); }catch(Throwable $ignored){}
   try{ $pdo->exec("ALTER TABLE `users` ADD COLUMN nip VARCHAR(50) NULL"); }catch(Throwable $ignored){}
+  try{ $pdo->exec("ALTER TABLE `users` ADD COLUMN last_seen DATETIME NULL"); }catch(Throwable $ignored){}
   try{
     $pdo->exec("CREATE TABLE IF NOT EXISTS peserta_didik (
       id INT AUTO_INCREMENT PRIMARY KEY,
