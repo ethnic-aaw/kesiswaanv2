@@ -11,6 +11,8 @@ if(isset($_GET['set_ta']) && $_GET['set_ta']!==''){
 }
 $u = current_user();
 if (!isset($u['avatar'])) $u['avatar'] = strtoupper(substr($u['nama'] ?? $u['username'] ?? 'A', 0, 1));
+// profil user login untuk modal topbar
+$meRow=[]; if(isset($pdo)&&$pdo&&!empty($u['id'])){ try{ $st=$pdo->prepare("SELECT nama,username,role,nip,status,last_seen FROM users WHERE id=? AND deleted_at IS NULL LIMIT 1"); $st->execute([(int)$u['id']]); $meRow=$st->fetch()?:[]; }catch(Throwable $e){} }
 $active = $active ?? '';
 $title = $title ?? 'Kesiswaan';
 $ta_aktif=null; $ta_list=[];
@@ -64,6 +66,7 @@ function navItem($key,$href,$icon,$label,$active){ $on=$active===$key;
     <?php if(role_can('view_pelanggaran_master')): ?><?=navItem('pelanggaran','/kesiswaanv2/pelanggaran/master.php','shield-alert','Poin Pelanggaran',$active)?><?php endif; ?>
     <?php if(role_can('view_catat_pelanggaran')): ?><?=navItem('pelanggaran_tambah','/kesiswaanv2/pelanggaran/tambah.php','plus-circle','Catat Pelanggaran',$active)?><?php endif; ?>
     <?php if(role_can('view_log_pelanggaran')): ?><?=navItem('pelanggaran_log','/kesiswaanv2/pelanggaran/log.php','scroll-text','Log Pelanggaran',$active)?><?php endif; ?>
+    <?php if(role_can('view_log_pelanggaran')): ?><?=navItem('pelanggaran_audit','/kesiswaanv2/pelanggaran/audit.php','history','Log Perubahan Poin',$active)?><?php endif; ?>
     <?php if(role_can('view_bk')): ?><?=navItem('bk','/kesiswaanv2/bk/index.php','heart-handshake','Data Bimbingan Konseling',$active)?><?php endif; ?>
     <?php if(role_can('view_bk_log')): ?><?=navItem('bk_log','/kesiswaanv2/bk/log.php','clipboard-list','Log Bimbingan Konseling',$active)?><?php endif; ?>
     <?php if(role_can('view_pengaturan')): ?>
@@ -112,12 +115,47 @@ function navItem($key,$href,$icon,$label,$active){ $on=$active===$key;
       <script>document.getElementById('taSwitcher')?.addEventListener('change',function(){ const u=new URL(location.href); u.searchParams.set('set_ta',this.value); location.href=u.toString(); });</script>
       <?php endif; ?>
       <button id="themeToggle" class="w-9 h-9 rounded-full border border-[#E2E8F0] dark:border-[#334155] bg-white dark:bg-[#1E293B] flex items-center justify-center hover:bg-[#F1F5F9] dark:hover:bg-white/5"><i data-lucide="moon" class="w-4 h-4 block dark:hidden"></i><i data-lucide="sun" class="w-4 h-4 hidden dark:block"></i></button>
-      <div class="hidden sm:flex items-center gap-2 pl-2 border-l border-[#E2E8F0] dark:border-[#334155]">
-        <img src="https://i.pravatar.cc/100?u=<?=urlencode($u['username'])?>" alt="" class="w-8 h-8 rounded-full object-cover">
-        <div class="hidden lg:block text-xs leading-none"><div class="font-semibold"><?=htmlspecialchars($u['nama'])?></div><div class="text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($u['role'])?></div></div>
+      <div class="relative hidden sm:flex items-center gap-2 pl-2 border-l border-[#E2E8F0] dark:border-[#334155]">
+        <button type="button" id="userMenuBtn" class="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-[#F1F5F9] dark:hover:bg-white/5">
+          <img src="https://i.pravatar.cc/100?u=<?=urlencode($u['username'])?>" alt="" class="w-8 h-8 rounded-full object-cover">
+          <div class="hidden lg:block text-left text-xs leading-none"><div class="font-semibold"><?=htmlspecialchars($u['nama'])?></div><div class="text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($u['role'])?></div></div>
+          <i data-lucide="chevron-down" class="w-3.5 h-3.5 text-[#94A3B8]"></i>
+        </button>
+        <div id="userMenu" class="hidden absolute right-0 top-full mt-2 w-56 bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card z-50 py-1">
+          <div class="px-4 py-2.5 border-b border-[#E2E8F0] dark:border-[#334155]"><div class="text-xs font-semibold truncate"><?=htmlspecialchars($u['nama'])?></div><div class="text-[11px] text-[#94A3B8]"><?=htmlspecialchars($u['role'])?> · <?=htmlspecialchars($u['username'])?></div></div>
+          <button type="button" onclick="openProfileModal()" class="w-full flex items-center gap-2 px-4 py-2 text-xs font-medium hover:bg-[#F8FAFC] dark:hover:bg-white/5"><i data-lucide="user" class="w-4 h-4 text-[#64748B]"></i> Profil</button>
+          <a href="/kesiswaanv2/logout.php" class="flex items-center gap-2 px-4 py-2 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"><i data-lucide="log-out" class="w-4 h-4"></i> Logout</a>
+        </div>
       </div>
     </div>
   </header>
+
+  <!-- PROFIL MODAL (topbar) -->
+  <div id="profileModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center p-4">
+    <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeProfileModal()"></div>
+    <div class="relative bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card w-full max-w-sm p-5 space-y-4">
+      <div class="flex items-center gap-3">
+        <img src="https://i.pravatar.cc/100?u=<?=urlencode($u['username'])?>" alt="" class="w-12 h-12 rounded-full object-cover border">
+        <div class="min-w-0"><div class="font-semibold text-sm truncate"><?=htmlspecialchars($meRow['nama']??$u['nama'])?></div><div class="text-xs text-[#475569] dark:text-[#94A3B8]"><?=htmlspecialchars($meRow['role']??$u['role'])?> · <?=htmlspecialchars($meRow['username']??$u['username'])?></div></div>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5 text-xs">
+        <div class="rounded-input border border-[#E2E8F0] dark:border-[#334155] p-2.5"><div class="text-[#94A3B8] text-[11px]">NIP</div><div class="font-medium mt-0.5 truncate"><?=htmlspecialchars($meRow['nip']??'-')?></div></div>
+        <div class="rounded-input border border-[#E2E8F0] dark:border-[#334155] p-2.5"><div class="text-[#94A3B8] text-[11px]">Status</div><div class="font-medium mt-0.5"><span class="px-2 py-0.5 rounded-full text-[11px] font-semibold <?= ($meRow['status']??'Aktif')==='Aktif'?'bg-emerald-50 text-emerald-700':'bg-[#FEE2E2] text-[#DC2626]' ?>"><?=htmlspecialchars($meRow['status']??'Aktif')?></span></div></div>
+        <div class="col-span-2 rounded-input border border-[#E2E8F0] dark:border-[#334155] p-2.5"><div class="text-[#94A3B8] text-[11px]">Terakhir aktif</div><div class="font-medium mt-0.5"><?= $meRow['last_seen']? htmlspecialchars(date('d M Y H:i',strtotime($meRow['last_seen']))).' · '.( (time()-strtotime($meRow['last_seen']))<300 ? '<span class="text-emerald-600">Online</span>' : '<span class="text-[#94A3B8]">Offline</span>' ) : '<span class="text-[#94A3B8]">Belum ada</span>' ?></div></div>
+      </div>
+      <div class="flex gap-2">
+        <a href="/kesiswaanv2/logout.php" class="flex-1 h-9 inline-flex items-center justify-center gap-1.5 rounded-input bg-red-600 hover:bg-red-700 text-white text-xs font-semibold"><i data-lucide="log-out" class="w-3.5 h-3.5"></i> Logout</a>
+        <button type="button" onclick="closeProfileModal()" class="flex-1 h-9 rounded-input border bg-white dark:bg-[#0F172A] text-xs font-medium">Tutup</button>
+      </div>
+    </div>
+  </div>
+  <script>
+  const userMenuBtn=document.getElementById('userMenuBtn'), userMenu=document.getElementById('userMenu');
+  userMenuBtn?.addEventListener('click',e=>{ e.stopPropagation(); userMenu.classList.toggle('hidden'); });
+  document.addEventListener('click',e=>{ if(userMenu && !userMenu.classList.contains('hidden') && !userMenu.contains(e.target) && e.target!==userMenuBtn) userMenu.classList.add('hidden'); });
+  function openProfileModal(){ document.getElementById('profileModal').classList.remove('hidden'); lucide.createIcons(); }
+  function closeProfileModal(){ document.getElementById('profileModal').classList.add('hidden'); }
+  </script>
 
   <!-- CONTENT -->
   <main class="flex-1 p-4 sm:p-6">
