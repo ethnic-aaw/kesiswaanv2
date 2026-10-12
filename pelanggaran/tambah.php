@@ -104,7 +104,7 @@ function renderRows(rows){
   listEl.querySelectorAll('button[data-x]').forEach(b=> b.addEventListener('click', ()=> pickSiswa(JSON.parse(b.dataset.x))));
 }
 let tmr=null;
-if(qEl) qEl.addEventListener('input', ()=>{ clearTimeout(tmr); const q=qEl.value.trim(); if(q.length<2){ listEl.innerHTML='<div class="p-3 text-xs text-muted">Ketik min 2 huruf</div>'; return; } tmr=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); renderRows(j.rows); }catch(e){ listEl.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
+if(qEl) qEl.addEventListener('input', ()=>{ clearTimeout(tmr); const q=qEl.value.trim(); if(q.length<2){ listEl.innerHTML='<div class="p-3 text-xs text-muted">Ketik min 2 huruf</div>'; return; } tmr=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}); const j=await r.json(); renderRows(j.rows); }catch(e){ listEl.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
 
 // --- Scan barcode (isi QR: NPSN | NISN | nama lengkap) ---
 async function lookupScan(raw){
@@ -112,7 +112,7 @@ async function lookupScan(raw){
   // kandidat: teks penuh → deret digit (NPSN/NISN) → token (nama), stop di hasil pertama yg match
   const cands=[...new Set([text, ...(text.match(/\d{5,}/g)||[]), ...text.split(/[^A-Za-z0-9]+/).filter(t=>t.length>=3)])];
   for(const q of cands){
-    try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q)); const j=await r.json(); const rows=j.rows||[];
+    try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}); const j=await r.json(); const rows=j.rows||[];
       if(rows.length){ await closeScan(); if(rows.length===1) pickSiswa(rows[0]); else { document.getElementById('mCari').classList.remove('hidden'); renderRows(rows); } return; }
     }catch(e){}
   }

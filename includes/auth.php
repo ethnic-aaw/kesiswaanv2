@@ -1,6 +1,20 @@
 <?php
 if(session_status()===PHP_SESSION_NONE) session_start();
 
+// auto-logout idle ~30 menit (ponytail: samakan dgn session.gc_maxlifetime di config/db.php)
+const IDLE_TIMEOUT = 1800;
+if(!empty($_SESSION['user'])){
+  if(isset($_SESSION['last_activity']) && (time() - (int)$_SESSION['last_activity']) > IDLE_TIMEOUT){
+    $_SESSION=[]; session_destroy();
+    if(!empty($_SERVER['HTTP_ACCEPT']) && str_contains($_SERVER['HTTP_ACCEPT'], 'application/json')){
+      http_response_code(401); header('Content-Type: application/json; charset=utf-8');
+      echo json_encode(['success'=>false,'error'=>'Sesi berakhir karena tidak ada aktivitas, login ulang']); exit;
+    }
+    header('Location: /kesiswaanv2/login.php?error='.urlencode('Sesi berakhir karena idle 30 menit — silakan login lagi')); exit;
+  }
+  $_SESSION['last_activity']=time();
+}
+
 function current_user(){
   return $_SESSION['user'] ?? null;
 }
