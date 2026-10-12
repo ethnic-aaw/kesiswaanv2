@@ -1,7 +1,6 @@
   </main>
   <footer class="px-4 sm:px-6 py-4 text-xs text-[#94A3B8] border-t border-[#E2E8F0] dark:border-[#334155] flex flex-wrap gap-2 justify-between">
-    <span>© 2025 Kesiswaan v1.4 · Backup harian · Soft-delete aktif</span>
-    <span class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> DB siap · PDO prepared · CSRF on</span>
+    <span>© Kesiswaan - SMKN 1 Leuwimunding 2026</span><span>Pengembang UP Jurusan PPLG SMKN 1 Leuwimunding 2026</span>
   </footer>
 </div>
 <script>

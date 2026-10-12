@@ -168,7 +168,7 @@ $dbMsg=''; if(!$dbOk){ try{ new PDO("mysql:host=127.0.0.1;charset=utf8mb4",'root
       <h1 class="text-[32px] xl:text-[36px] font-bold leading-[1.15] text-white">Pantau, catat,<br><span class="text-[#93C5FD]">dan bina siswa</span><br>dalam satu platform.</h1>
       <p class="text-[14px] leading-6 text-slate-300">Jembatan Guru BK, Wali Kelas, dan Siswa — menggantikan pencatatan manual dengan data NIPD/NIS yang live dan aman.</p>
     </div>
-    <div class="relative flex items-center justify-between text-xs text-slate-400 border-t border-white/10 pt-4"><span>© 2025 Kesiswaan</span><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Backup harian</span></div>
+    <div class="relative flex items-center justify-between text-xs text-slate-400 border-t border-white/10 pt-4"><span>© Kesiswaan - SMKN 1 Leuwimunding 2026</span><span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Pengembang UP Jurusan PPLG SMKN 1 Leuwimunding 2026</span></div>
   </div>
   <div class="flex-1 flex flex-col min-h-screen lg:min-h-0">
     <div class="flex items-center justify-between px-5 sm:px-8 py-4 lg:px-10 lg:py-6">
