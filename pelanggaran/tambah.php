@@ -86,7 +86,7 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
   <div id="mCari" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="document.getElementById('mCari').classList.add('hidden')"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-3">Cari Siswa</h3><input id="qSiswa" type="text" placeholder="Ketik nama/NIPD min 2 huruf..." class="w-full h-10 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm mb-3"><div id="listSiswa" class="max-h-60 overflow-y-auto divide-y"></div><button onclick="document.getElementById('mCari').classList.add('hidden')" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 
 <!-- Scan barcode siswa (isi QR: NPSN | NISN | nama lengkap) -->
-<div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
+<div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><div id="scanResult" class="hidden mt-3"></div><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 </div>
 <script>
 const jpSel=document.getElementById('jp_id'), poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
@@ -107,21 +107,36 @@ let tmr=null;
 if(qEl) qEl.addEventListener('input', ()=>{ clearTimeout(tmr); const q=qEl.value.trim(); if(q.length<2){ listEl.innerHTML='<div class="p-3 text-xs text-muted">Ketik min 2 huruf</div>'; return; } tmr=setTimeout(async()=>{ try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}); const j=await r.json(); renderRows(j.rows); }catch(e){ listEl.innerHTML='<div class="p-3 text-xs text-red-500">Gagal cari</div>'; } },300); });
 
 // --- Scan barcode (isi QR: NPSN | NISN | nama lengkap) ---
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function showScanFound(rows){
+  const el=document.getElementById('scanResult');
+  el.innerHTML='<div class="text-xs font-semibold text-emerald-600 mb-1.5">✓ Siswa ditemukan — tekan OK untuk memilih:</div>'
+    + rows.map((x,i)=>`<div class="flex items-center justify-between gap-2 border border-[#E2E8F0] dark:border-[#334155] rounded-input p-2.5 mb-1.5"><div class="min-w-0"><div class="font-semibold text-sm truncate">${esc(x.nama)}</div><div class="text-xs text-muted truncate">NIPD ${esc(x.nipd)} · Kelas ${esc(x.kelas||'—')}</div></div><button type="button" data-ok="${i}" class="h-8 px-3 shrink-0 rounded-input bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold inline-flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> OK</button></div>`).join('')
+    + '<button type="button" id="scanAgain" class="w-full h-8 rounded-input border text-xs mt-1">Scan ulang</button>';
+  el.classList.remove('hidden');
+  el.querySelectorAll('button[data-ok]').forEach(b=> b.addEventListener('click', ()=>{ pickSiswa(rows[+b.dataset.ok]); closeScan(); }));
+  document.getElementById('scanAgain').addEventListener('click', ()=>{ el.classList.add('hidden'); startCamera(); });
+  if(window.lucide) lucide.createIcons();
+}
 async function lookupScan(raw){
   const text=(raw||'').trim(); if(!text) return;
   // kandidat: teks penuh → deret digit (NPSN/NISN) → token (nama), stop di hasil pertama yg match
   const cands=[...new Set([text, ...(text.match(/\d{5,}/g)||[]), ...text.split(/[^A-Za-z0-9]+/).filter(t=>t.length>=3)])];
   for(const q of cands){
     try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}); const j=await r.json(); const rows=j.rows||[];
-      if(rows.length){ await closeScan(); if(rows.length===1) pickSiswa(rows[0]); else { document.getElementById('mCari').classList.remove('hidden'); renderRows(rows); } return; }
+      if(rows.length){ await pauseCam(); showScanFound(rows); return; }
     }catch(e){}
   }
-  await closeScan(); toast('Barcode tidak cocok dengan siswa manapun','error');
+  const el=document.getElementById('scanResult');
+  el.innerHTML='<div class="text-xs text-red-500 mb-1.5">Barcode tidak cocok dengan siswa manapun.</div><button type="button" id="scanAgain" class="w-full h-8 rounded-input border text-xs">Scan ulang</button>';
+  el.classList.remove('hidden');
+  document.getElementById('scanAgain').addEventListener('click', ()=>{ el.classList.add('hidden'); startCamera(); });
 }
 let cam=null;
 const camMsg=t=>{ const el=document.getElementById('scanCam'); el.textContent=t; el.classList.add('text-red-500'); };
-async function openScan(){ document.getElementById('mScan').classList.remove('hidden');
+async function startCamera(){
   const camEl=document.getElementById('scanCam'); camEl.classList.remove('text-red-500'); camEl.textContent='Arahkan kamera ke barcode…';
+  document.getElementById('scanResult').classList.add('hidden');
   // kamera butuh secure context (HTTPS / localhost) — HTTP via IP LAN ditolak browser
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa.'); return; }
   try{ if(!window.Html5Qrcode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
@@ -129,7 +144,9 @@ async function openScan(){ document.getElementById('mScan').classList.remove('hi
   try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ lookupScan(txt); }); }
   catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)); }
 }
-async function closeScan(){ document.getElementById('mScan').classList.add('hidden'); if(cam){ try{ await cam.stop(); cam.clear(); }catch(e){} cam=null; document.getElementById('qr-reader').innerHTML=''; } }
+async function pauseCam(){ if(cam){ try{ await cam.stop(); cam.clear(); }catch(e){} cam=null; document.getElementById('qr-reader').innerHTML=''; } }
+async function openScan(){ document.getElementById('mScan').classList.remove('hidden'); await startCamera(); }
+async function closeScan(){ document.getElementById('mScan').classList.add('hidden'); await pauseCam(); }
 const btnScan=document.getElementById('btnScan');
 if(btnScan) btnScan.addEventListener('click', openScan);
 </script>

@@ -84,7 +84,7 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
     <form method="GET" class="flex gap-2 items-center">
       <div class="relative">
         <i data-lucide="search" class="w-4 h-4 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#94A3B8]"></i>
-        <input name="q" value="<?=htmlspecialchars($q)?>" placeholder="Cari kode / nama…" class="h-9 pl-8 pr-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm w-[200px]">
+        <input name="q" id="qPel" oninput="filterPel()" value="<?=htmlspecialchars($q)?>" placeholder="Ketik untuk memfilter…" class="h-9 pl-8 pr-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm w-[200px]">
       </div>
       <select name="kategori" onchange="this.form.submit()" class="h-9 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm px-3">
         <option value="">Semua Kategori</option>
@@ -94,7 +94,7 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
       </select>
       <button class="h-9 px-3 rounded-input border bg-white dark:bg-[#0F172A] text-sm">Filter</button>
     </form>
-    <span class="text-xs text-[#475569] dark:text-[#94A3B8]"><?=$total?> data · total DB: <?=$cntAll?> <?php if($cntAll<56): ?><span class="text-amber-600">(belum lengkap 56)</span><?php endif; ?></span>
+    <span class="text-xs text-[#475569] dark:text-[#94A3B8]"><span id="pelCount"><?=$total?></span> data · total DB: <?=$cntAll?> <?php if($cntAll<56): ?><span class="text-amber-600">(belum lengkap 56)</span><?php endif; ?></span>
   </div>
   <div class="flex flex-wrap gap-2">
     <?php if($cntAll<56): ?>
@@ -105,12 +105,12 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
 </div>
 <div class="mt-4 text-xs text-[#94A3B8]">Import massal pindah ke <a href="/kesiswaanv2/pengaturan/pelanggaran.php" class="text-[#2563EB] underline">Pengaturan → Import Data Pelanggaran</a> (template XLS + preview, seperti Dapodik).</div>
 
-<div class="hidden md:block bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card overflow-hidden mt-4">
+<div class="hidden md:block bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card overflow-hidden mt-4" id="pelTable">
 <table class="w-full text-sm">
 <thead class="bg-[#F1F5F9] dark:bg-[#0F172A] text-xs uppercase text-[#475569] dark:text-[#94A3B8]"><tr><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'kode','Kode',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'nama','Nama',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'kategori','Kategori',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'bobot','Bobot',$sort,$dir)?></th><th class="px-3 py-3 text-left"><?=sort_link_pel($baseQs,'konsekuensi','Konsekuensi',$sort,$dir)?></th><th class="px-3 py-3 text-left">Aksi</th></tr></thead>
 <tbody class="divide-y divide-[#E2E8F0] dark:divide-[#334155]">
-<?php foreach($rows as $r): ?>
-<tr class="hover:bg-[#F8FAFC] dark:hover:bg-white/[0.03]">
+<?php foreach($rows as $r): $sn=strtolower($r['kode'].' '.$r['nama'].' '.$r['kategori'].' '.($r['deskripsi']??'').' '.($r['konsekuensi']??'')); ?>
+<tr class="hover:bg-[#F8FAFC] dark:hover:bg-white/[0.03]" data-pel="<?=htmlspecialchars($sn,ENT_QUOTES)?>">
   <td class="px-3 py-2.5 font-mono text-xs"><?=htmlspecialchars($r['kode'])?></td>
   <td class="px-3 py-2.5 font-medium"><?=htmlspecialchars($r['nama'])?><div class="text-xs text-[#94A3B8] truncate max-w-[260px]"><?=htmlspecialchars($r['deskripsi']??'')?></div></td>
   <td class="px-3 py-2.5"><span class="px-2 py-1 rounded-badge text-xs font-semibold <?=catColor($r['kategori'])?>"><?=htmlspecialchars($r['kategori'])?></span></td>
@@ -123,13 +123,14 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
 </tr>
 <?php endforeach; ?>
 <?php if(!$rows): ?><tr><td colspan="6" class="px-4 py-10 text-center text-sm text-[#94A3B8]">Belum ada data — klik <b>Load Seed Leuwimunding</b> atau <b>Import CSV</b>.</td></tr><?php endif; ?>
+<tr id="pelEmpty" class="hidden"><td colspan="6" class="px-4 py-10 text-center text-sm text-[#94A3B8]">Tidak ada data yang cocok dengan pencarian.</td></tr>
 </tbody>
 </table>
 </div>
 
-<div class="md:hidden space-y-3 mt-4">
-<?php foreach($rows as $r): ?>
-<div class="bg-white dark:bg-[#1E293B] border rounded-card p-4">
+<div class="md:hidden space-y-3 mt-4" id="pelCards">
+<?php foreach($rows as $r): $sn=strtolower($r['kode'].' '.$r['nama'].' '.$r['kategori'].' '.($r['deskripsi']??'').' '.($r['konsekuensi']??'')); ?>
+<div class="bg-white dark:bg-[#1E293B] border rounded-card p-4" data-pel="<?=htmlspecialchars($sn,ENT_QUOTES)?>">
   <div class="flex justify-between"><span class="font-mono text-xs"><?=htmlspecialchars($r['kode'])?></span><span class="px-2 py-1 rounded-badge text-xs font-semibold <?=catColor($r['kategori'])?>"><?=htmlspecialchars($r['kategori'])?></span></div>
   <div class="font-semibold text-sm mt-1"><?=htmlspecialchars($r['nama'])?></div>
   <div class="flex items-center gap-2 mt-2"><span class="w-7 h-7 rounded-full bg-[#0F172A] text-white flex items-center justify-center text-xs font-bold"><?=$r['bobot_poin']?></span><span class="text-xs text-[#475569]"><?=htmlspecialchars($r['konsekuensi']??'-')?></span></div>
@@ -172,6 +173,19 @@ function catColor($c){ return match($c){'Kedisiplinan'=>'bg-[#EFF6FF] text-[#256
 
 
 <script>
+function filterPel(){
+  const inp=document.getElementById('qPel'); const q=(inp?.value||'').trim().toLowerCase();
+  let vis=0, any=0;
+  document.querySelectorAll('#pelTable tbody [data-pel]').forEach(tr=>{
+    any++; const m=!q || tr.dataset.pel.includes(q);
+    tr.style.display=m?'':'none'; if(m) vis++;
+  });
+  document.querySelectorAll('#pelCards [data-pel]').forEach(c=>{
+    const m=!q || c.dataset.pel.includes(q); c.style.display=m?'':'none';
+  });
+  const empty=document.getElementById('pelEmpty'); if(empty) empty.classList.toggle('hidden', !(any>0 && vis===0 && q));
+  const cnt=document.getElementById('pelCount'); if(cnt) cnt.textContent=(q? vis+' dari ' : '')+'<?=$total?>';
+}
 function openEdit(r){
   document.getElementById('e_id').value=r.id;
   document.getElementById('e_kode').value=r.kode;
