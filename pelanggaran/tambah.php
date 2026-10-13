@@ -59,6 +59,7 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
       </div>
       <div class="min-w-0">
         <label class="block text-xs font-medium mb-1">Jenis Pelanggaran <span class="text-red-500">*</span></label>
+        <input type="text" id="jpSearch" autocomplete="off" placeholder="Ketik untuk cari jenis pelanggaran…" class="w-full min-w-0 max-w-full h-9 mb-1.5 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm">
         <select name="jenis_pelanggaran_id" id="jp_id" required class="w-full min-w-0 max-w-full h-9 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-3 text-sm truncate">
           <option value="">Pilih jenis...</option>
           <?php foreach($jenisList as $j): ?><option value="<?=$j['id']?>" data-bobot="<?=$j['bobot_poin']?>"><?=htmlspecialchars($j['kode'])?> — <?=htmlspecialchars($j['nama'])?> (<?=$j['bobot_poin']?>)</option><?php endforeach; ?>
@@ -91,6 +92,21 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
 <script>
 const jpSel=document.getElementById('jp_id'), poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
 if(jpSel) jpSel.addEventListener('change', ()=>{ const o=jpSel.options[jpSel.selectedIndex]; const b=o?.dataset?.bobot; if(b){ poinIn.value=b; info.textContent='(bobot '+b+', boleh override)'; } });
+// filter dropdown Jenis Pelanggaran saat mengetik (56 opsi → cari cepat)
+(function(){
+  const srch=document.getElementById('jpSearch');
+  if(!jpSel||!srch) return;
+  const all=[...jpSel.options].map(o=>({value:o.value,text:o.textContent,bobot:o.dataset.bobot||'',placeholder:o.value===''}));
+  srch.addEventListener('input', ()=>{
+    const q=srch.value.trim().toLowerCase(), cur=jpSel.value;
+    jpSel.innerHTML='';
+    all.filter(o=> o.placeholder || !q || o.text.toLowerCase().includes(q))
+       .forEach(o=>{ const e=document.createElement('option'); e.value=o.value; e.textContent=o.text; if(o.bobot) e.dataset.bobot=o.bobot; jpSel.appendChild(e); });
+    if([...jpSel.options].some(o=>o.value===cur)) jpSel.value=cur; else jpSel.value='';
+    const real=[...jpSel.options].filter(o=>o.value!=='');
+    if(q && real.length===1){ jpSel.value=real[0].value; jpSel.dispatchEvent(new Event('change')); } // auto-pilih bila tinggal 1
+  });
+})();
 const qEl=document.getElementById('qSiswa'), listEl=document.getElementById('listSiswa'), sisSel=document.getElementById('siswa_id');
 function pickSiswa(x){ // {id,nama,nipd,kelas} — dipakai hasil pencarian & hasil scan
   if(![...sisSel.options].some(o=>o.value===x.id)){ const o=document.createElement('option'); o.value=x.id; o.textContent=x.nama+' — '+x.nipd+' — '+(x.kelas||'—')+' (dari pencarian)'; o.selected=true; sisSel.appendChild(o); } else sisSel.value=x.id;
@@ -119,12 +135,14 @@ function showScanFound(rows){
   if(window.lucide) lucide.createIcons();
 }
 async function lookupScan(raw){
-  const text=(raw||'').trim(); if(!text) return;
+  if(scanLock) return; scanLock=true;           // cegah callback beruntun (race) — kamera bisa tembak >1x
+  await pauseCam();                              // freeze kamera segera, jangan tunggu fetch
+  const text=(raw||'').trim(); if(!text){ return; }
   // kandidat: teks penuh → deret digit (NPSN/NISN) → token (nama), stop di hasil pertama yg match
   const cands=[...new Set([text, ...(text.match(/\d{5,}/g)||[]), ...text.split(/[^A-Za-z0-9]+/).filter(t=>t.length>=3)])];
   for(const q of cands){
     try{ const r=await fetch('/kesiswaanv2/siswa/search.php?q='+encodeURIComponent(q),{headers:{'Accept':'application/json'}}); const j=await r.json(); const rows=j.rows||[];
-      if(rows.length){ await pauseCam(); showScanFound(rows); return; }
+      if(rows.length){ showScanFound(rows); return; }
     }catch(e){}
   }
   const el=document.getElementById('scanResult');
@@ -132,19 +150,24 @@ async function lookupScan(raw){
   el.classList.remove('hidden');
   document.getElementById('scanAgain').addEventListener('click', ()=>{ el.classList.add('hidden'); startCamera(); });
 }
-let cam=null;
+let cam=null; let scanLock=false; let scanSession=0;
 const camMsg=t=>{ const el=document.getElementById('scanCam'); el.textContent=t; el.classList.add('text-red-500'); };
 async function startCamera(){
+  scanLock=false;
+  const mySession=++scanSession;                 // sesi baru — callback sesi lama diabaikan
   const camEl=document.getElementById('scanCam'); camEl.classList.remove('text-red-500'); camEl.textContent='Arahkan kamera ke barcode…';
   document.getElementById('scanResult').classList.add('hidden');
+  document.getElementById('scanResult').innerHTML='';
   // kamera butuh secure context (HTTPS / localhost) — HTTP via IP LAN ditolak browser
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa.'); return; }
   try{ if(!window.Html5Qrcode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
   }catch(e){ camMsg('Gagal load library scan (cek koneksi internet).'); return; }
-  try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ lookupScan(txt); }); }
+  // reset elemen QR — buang canvas/instance lama biar tidak ada callback ganda
+  document.getElementById('qr-reader').innerHTML='';
+  try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ if(mySession!==scanSession) return; lookupScan(txt); }); }
   catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)); }
 }
-async function pauseCam(){ if(cam){ try{ await cam.stop(); cam.clear(); }catch(e){} cam=null; document.getElementById('qr-reader').innerHTML=''; } }
+async function pauseCam(){ scanSession++; if(cam){ const c=cam; cam=null; try{ await c.stop(); c.clear(); }catch(e){} } const el=document.getElementById('qr-reader'); if(el) el.innerHTML=''; }
 async function openScan(){ document.getElementById('mScan').classList.remove('hidden'); await startCamera(); }
 async function closeScan(){ document.getElementById('mScan').classList.add('hidden'); await pauseCam(); }
 const btnScan=document.getElementById('btnScan');
