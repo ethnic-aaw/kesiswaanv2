@@ -40,7 +40,7 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
 <?php if(isset($_GET['err'])): ?><div class="mb-3 rounded-lg border-l-4 border-red-500 bg-[#FFF1F2] px-4 py-2.5 text-sm"><?=htmlspecialchars($_GET['err'])?></div><?php endif; ?>
 <div class="bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card p-4 sm:p-5 overflow-hidden max-w-full">
   <h3 class="font-semibold text-sm mb-3 flex items-center gap-2"><i data-lucide="plus-circle" class="w-4 h-4 text-emerald-600"></i> Catat Pelanggaran — Input Cepat</h3>
-  <form method="POST" class="space-y-3 min-w-0">
+  <form method="POST" id="fCatat" class="space-y-3 min-w-0">
     <?=csrf_field()?>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3 min-w-0">
       <div class="min-w-0">
@@ -59,11 +59,18 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
       </div>
       <div class="min-w-0">
         <label class="block text-xs font-medium mb-1">Jenis Pelanggaran <span class="text-red-500">*</span></label>
-        <input type="text" id="jpSearch" autocomplete="off" placeholder="Ketik untuk cari jenis pelanggaran…" class="w-full min-w-0 max-w-full h-9 mb-1.5 px-3 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm">
-        <select name="jenis_pelanggaran_id" id="jp_id" required class="w-full min-w-0 max-w-full h-9 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-3 text-sm truncate">
-          <option value="">Pilih jenis...</option>
-          <?php foreach($jenisList as $j): ?><option value="<?=$j['id']?>" data-bobot="<?=$j['bobot_poin']?>"><?=htmlspecialchars($j['kode'])?> — <?=htmlspecialchars($j['nama'])?> (<?=$j['bobot_poin']?>)</option><?php endforeach; ?>
-        </select>
+        <div class="relative" id="jpCombo">
+          <input type="hidden" name="jenis_pelanggaran_id" id="jp_id">
+          <button type="button" id="jpBtn" class="w-full min-w-0 max-w-full h-9 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] px-3 text-sm flex items-center justify-between gap-2">
+            <span id="jpBtnText" class="truncate text-[#94A3B8]">Pilih jenis...</span>
+            <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-[#94A3B8]"></i>
+          </button>
+          <div id="jpPanel" class="hidden absolute left-0 right-0 z-40 mt-1 bg-white dark:bg-[#1E293B] border border-[#E2E8F0] dark:border-[#334155] rounded-card shadow-card p-2">
+            <input type="text" id="jpSearch" autocomplete="off" placeholder="Cari jenis pelanggaran…" class="w-full h-9 px-3 mb-1.5 rounded-input border border-[#CBD5E1] dark:border-[#334155] bg-white dark:bg-[#0F172A] text-sm">
+            <div id="jpList" class="max-h-56 overflow-y-auto"></div>
+          </div>
+        </div>
+        <script type="application/json" id="jpData"><?=json_encode(array_map(fn($j)=>['v'=>(string)$j['id'],'t'=>$j['kode'].' — '.$j['nama'].' ('.$j['bobot_poin'].')','b'=>(string)$j['bobot_poin']],$jenisList), JSON_HEX_TAG|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE)?></script>
       </div>
       <div class="min-w-0">
         <label class="block text-xs font-medium mb-1">Poin <span class="text-red-500">*</span> <span id="bobotInfo" class="font-normal text-[#94A3B8]"></span></label>
@@ -90,23 +97,32 @@ try{ $jenisList=$pdo->query("SELECT id,kode,nama,bobot_poin FROM jenis_pelanggar
 <div id="mScan" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4"><div class="absolute inset-0 bg-black/40" onclick="closeScan()"></div><div class="relative bg-white dark:bg-[#1E293B] rounded-card border p-5 w-full max-w-md"><h3 class="font-semibold text-sm mb-2 flex items-center gap-2"><i data-lucide="scan-line" class="w-4 h-4 text-emerald-600"></i> Scan Barcode Siswa</h3><div id="scanCam" class="text-[11px] text-muted mb-2">Arahkan kamera ke barcode…</div><div id="qr-reader" class="w-full rounded-input overflow-hidden"></div><div id="scanResult" class="hidden mt-3"></div><button onclick="closeScan()" class="mt-3 w-full h-9 rounded-input border text-sm">Tutup</button></div></div>
 </div>
 <script>
-const jpSel=document.getElementById('jp_id'), poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
-if(jpSel) jpSel.addEventListener('change', ()=>{ const o=jpSel.options[jpSel.selectedIndex]; const b=o?.dataset?.bobot; if(b){ poinIn.value=b; info.textContent='(bobot '+b+', boleh override)'; } });
-// filter dropdown Jenis Pelanggaran saat mengetik (56 opsi → cari cepat)
+const poinIn=document.getElementById('poin_final'), info=document.getElementById('bobotInfo');
+// Jenis Pelanggaran: dropdown dgn kolom cari yang muncul saat dropdown dibuka
 (function(){
-  const srch=document.getElementById('jpSearch');
-  if(!jpSel||!srch) return;
-  const all=[...jpSel.options].map(o=>({value:o.value,text:o.textContent,bobot:o.dataset.bobot||'',placeholder:o.value===''}));
-  srch.addEventListener('input', ()=>{
-    const q=srch.value.trim().toLowerCase(), cur=jpSel.value;
-    jpSel.innerHTML='';
-    all.filter(o=> o.placeholder || !q || o.text.toLowerCase().includes(q))
-       .forEach(o=>{ const e=document.createElement('option'); e.value=o.value; e.textContent=o.text; if(o.bobot) e.dataset.bobot=o.bobot; jpSel.appendChild(e); });
-    if([...jpSel.options].some(o=>o.value===cur)) jpSel.value=cur; else jpSel.value='';
-    const real=[...jpSel.options].filter(o=>o.value!=='');
-    if(q && real.length===1){ jpSel.value=real[0].value; jpSel.dispatchEvent(new Event('change')); } // auto-pilih bila tinggal 1
-  });
+  const combo=document.getElementById('jpCombo'), btn=document.getElementById('jpBtn'), btnText=document.getElementById('jpBtnText'),
+        panel=document.getElementById('jpPanel'), srch=document.getElementById('jpSearch'), list=document.getElementById('jpList'), hid=document.getElementById('jp_id');
+  if(!combo||!btn) return;
+  let all=[]; try{ all=JSON.parse(document.getElementById('jpData').textContent)||[]; }catch(e){}
+  const htmlesc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  function render(q){
+    q=(q||'').trim().toLowerCase();
+    const rows=all.filter(o=>!q||o.t.toLowerCase().includes(q));
+    list.innerHTML=rows.length
+      ? rows.map(o=>`<button type="button" data-v="${o.v}" data-b="${o.b||''}" class="w-full text-left px-2 py-2 text-sm rounded-input hover:bg-[#F1F5F9] dark:hover:bg-white/5 truncate">${htmlesc(o.t)}</button>`).join('')
+      : '<div class="px-2 py-3 text-xs text-[#94A3B8]">Tidak ada yang cocok</div>';
+  }
+  function close(){ panel.classList.add('hidden'); }
+  function pick(v,txt,b){ hid.value=v; btnText.textContent=txt; btnText.classList.remove('text-[#94A3B8]'); if(b){ poinIn.value=b; info.textContent='(bobot '+b+', boleh override)'; } close(); }
+  btn.addEventListener('click', e=>{ e.stopPropagation(); if(panel.classList.contains('hidden')){ panel.classList.remove('hidden'); srch.value=''; render(''); srch.focus(); } else close(); });
+  srch.addEventListener('input', ()=>render(srch.value));
+  srch.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); const f=list.querySelector('button[data-v]'); if(f) pick(f.dataset.v, f.textContent.trim(), f.dataset.b); } });
+  list.addEventListener('click', e=>{ const b=e.target.closest('button[data-v]'); if(!b) return; pick(b.dataset.v, b.textContent.trim(), b.dataset.b); });
+  document.addEventListener('click', e=>{ if(!combo.contains(e.target)) close(); });
 })();
+// validasi jenis pelanggaran (hidden input tak ikut required native)
+const fCatat=document.getElementById('fCatat');
+if(fCatat) fCatat.addEventListener('submit', e=>{ if(!document.getElementById('jp_id').value){ e.preventDefault(); const b=document.getElementById('jpBtn'); b.classList.add('ring-2','ring-red-400'); b.focus(); setTimeout(()=>b.classList.remove('ring-2','ring-red-400'),1500); } });
 const qEl=document.getElementById('qSiswa'), listEl=document.getElementById('listSiswa'), sisSel=document.getElementById('siswa_id');
 function pickSiswa(x){ // {id,nama,nipd,kelas} — dipakai hasil pencarian & hasil scan
   if(![...sisSel.options].some(o=>o.value===x.id)){ const o=document.createElement('option'); o.value=x.id; o.textContent=x.nama+' — '+x.nipd+' — '+(x.kelas||'—')+' (dari pencarian)'; o.selected=true; sisSel.appendChild(o); } else sisSel.value=x.id;
@@ -150,7 +166,7 @@ async function lookupScan(raw){
   el.classList.remove('hidden');
   document.getElementById('scanAgain').addEventListener('click', ()=>{ el.classList.add('hidden'); startCamera(); });
 }
-let cam=null; let scanLock=false; let scanSession=0;
+let cam=null; let scanLock=false; let scanSession=0; let lastScanText='', lastScanAt=0;
 const camMsg=t=>{ const el=document.getElementById('scanCam'); el.textContent=t; el.classList.add('text-red-500'); };
 async function startCamera(){
   scanLock=false;
@@ -162,9 +178,14 @@ async function startCamera(){
   if(!window.isSecureContext || !navigator.mediaDevices?.getUserMedia){ camMsg('Kamera butuh HTTPS/localhost — akses via HTTP dari IP tidak bisa.'); return; }
   try{ if(!window.Html5Qrcode) await new Promise((res,rej)=>{ const s=document.createElement('script'); s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'; s.onload=res; s.onerror=rej; document.head.appendChild(s); });
   }catch(e){ camMsg('Gagal load library scan (cek koneksi internet).'); return; }
-  // reset elemen QR — buang canvas/instance lama biar tidak ada callback ganda
-  document.getElementById('qr-reader').innerHTML='';
-  try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{ if(mySession!==scanSession) return; lookupScan(txt); }); }
+  // ganti elemen QR dgn node baru — pastikan tidak ada instance/canvas lama nyangkut
+  { const old=document.getElementById('qr-reader'); const fresh=old.cloneNode(false); fresh.removeAttribute('style'); old.parentNode.replaceChild(fresh, old); }
+  try{ cam=new Html5Qrcode('qr-reader'); await cam.start({facingMode:'environment'},{fps:10,qrbox:220}, txt=>{
+    if(mySession!==scanSession) return;                            // callback sesi kamera lama
+    if(txt===lastScanText && Date.now()-lastScanAt < 4000) return; // barcode sama masih di depan lensa → tunggu yg beda
+    lastScanText=txt; lastScanAt=Date.now();
+    lookupScan(txt);
+  }); }
   catch(e){ camMsg(e?.name==='NotAllowedError' ? 'Izin kamera ditolak — izinkan di pengaturan browser.' : 'Kamera gagal start: '+(e?.message||e)); }
 }
 async function pauseCam(){ scanSession++; if(cam){ const c=cam; cam=null; try{ await c.stop(); c.clear(); }catch(e){} } const el=document.getElementById('qr-reader'); if(el) el.innerHTML=''; }
